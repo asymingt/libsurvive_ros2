@@ -24,6 +24,17 @@
 #include <string>
 #include <vector>
 
+void ros_from_pose(
+  geometry_msgs::msg::Transform* const tx, const SurvivePose& pose) {
+  tx->translation.x = pose.Pos[0];
+  tx->translation.y = pose.Pos[1];
+  tx->translation.z = pose.Pos[2];
+  tx->rotation.w = pose.Rot[0];
+  tx->rotation.x = pose.Rot[1];
+  tx->rotation.y = pose.Rot[2];
+  tx->rotation.z = pose.Rot[3];
+}
+
 namespace libsurvive_ros2 {
 
 Component::Component(const rclcpp::NodeOptions& options)
@@ -32,10 +43,27 @@ Component::Component(const rclcpp::NodeOptions& options)
   , tf_broadcaster_(std::make_unique<tf2_ros::TransformBroadcaster>(*this))
   , tf_static_broadcaster_(std::make_unique<tf2_ros::StaticTransformBroadcaster>(*this)) {
 
-  // Convert the ROS parameters to
+  this->declare_parameter("world_frame", "libsurvive_frame"); 
+  this->get_parameter("world_frame", world_frame_);
+
+  std::string imu_topic;
+  this->declare_parameter("imu_topic", "imu"); 
+  this->get_parameter("imu_topic", imu_topic);
+  imu_publisher_ = this->create_publisher<sensor_msgs::msg::Imu>(imu_topic, 10);
+
+  std::string joy_topic;
+  this->declare_parameter("joy_topic", "joy"); 
+  this->get_parameter("joy_topic", joy_topic);
+  joy_publisher_ = this->create_publisher<sensor_msgs::msg::Joy>(joy_topic, 10);
+
+  std::string cfg_topic;
+  this->declare_parameter("cfg_topic", "cfg"); 
+  this->get_parameter("cfg_topic", cfg_topic);
+  cfg_publisher_ = this->create_publisher<diagnostic_msgs::msg::KeyValue>(cfg_topic, 10);
+
   std::string driver_args;
-  this->declare_parameter("driver_args", "--force-recalibrate 1"); 
-  this->get_parameter("driver_args", driver_args);
+  this->declare_parameter("cli_args", "--force-recalibrate 1"); 
+  this->get_parameter("cli_args", driver_args);
   std::vector<const char*> args;
   std::stringstream driver_ss(driver_args);
   std::string token;
@@ -84,15 +112,9 @@ void Component::work() {
         if (timecode > 0) {
           geometry_msgs::msg::TransformStamped pose_msg;
           pose_msg.header.stamp = this->get_clock()->now();
-          pose_msg.header.frame_id = "libsurvive_world";
+          pose_msg.header.frame_id = world_frame_;
           pose_msg.child_frame_id = survive_simple_serial_number(pose_event->object);
-          pose_msg.transform.translation.x = pose.Pos[0];
-          pose_msg.transform.translation.y = pose.Pos[1];
-          pose_msg.transform.translation.z = pose.Pos[2];
-          pose_msg.transform.rotation.w = pose.Rot[0];
-          pose_msg.transform.rotation.x = pose.Rot[1];
-          pose_msg.transform.rotation.y = pose.Rot[2];
-          pose_msg.transform.rotation.z = pose.Rot[3];
+          ros_from_pose(&pose_msg.transform, pose);
           tf_broadcaster_->sendTransform(pose_msg);
         }
       }
@@ -101,13 +123,32 @@ void Component::work() {
 
     // Button press events:
     case SurviveSimpleEventType_ButtonEvent: {
-      RCLCPP_WARN(this->get_logger(), "Button events are not yet implemented");
+      const struct SurviveSimpleButtonEvent *button_event = survive_simple_get_button_event(&event);
+      auto obj = button_event->object;
+      sensor_msgs::msg::Joy joy_msg;
+      joy_msg.header.frame_id = survive_simple_serial_number(button_event->object);
+      joy_msg.header.stamp = this->get_clock()->now();
+      joy_msg.axes.resize(SURVIVE_MAX_AXIS_COUNT);
+      joy_msg.buttons.resize(SURVIVE_BUTTON_MAX * 2);
+      int64_t mask = survive_simple_object_get_button_mask(obj);
+      mask |= (survive_simple_object_get_touch_mask(obj) << SURVIVE_BUTTON_MAX);
+      for (int i = 0; i < SURVIVE_MAX_AXIS_COUNT;i++) {
+          joy_msg.axes[i] = (float)survive_simple_object_get_input_axis(obj, (enum SurviveAxis)i);
+      }
+      for (int i = 0; i < mask && i < int(joy_msg.buttons.size()); i++) {
+          joy_msg.buttons[i] = (mask >> i) & 1;
+      }
+      joy_publisher_->publish(joy_msg);
       break;
     }
     
-    // Configuration events
+    // Configuration events:
     case SurviveSimpleEventType_ConfigEvent: {
-      RCLCPP_WARN(this->get_logger(), "Configuration events are not yet implemented");
+      const struct SurviveSimpleConfigEvent *config_event = survive_simple_get_config_event(&event);
+      diagnostic_msgs::msg::KeyValue cfg_msg;
+      cfg_msg.key = survive_simple_serial_number(config_event->object);
+      cfg_msg.value = config_event->cfg;
+      cfg_publisher_->publish(cfg_msg);
       break;
     }
 
@@ -129,15 +170,9 @@ void Component::work() {
           if (timecode > 0) {
             geometry_msgs::msg::TransformStamped pose_msg;
             pose_msg.header.stamp = this->get_clock()->now();
-            pose_msg.header.frame_id = "libsurvive_world";
+            pose_msg.header.frame_id = world_frame_;
             pose_msg.child_frame_id = survive_simple_serial_number(it);
-            pose_msg.transform.translation.x = pose.Pos[0];
-            pose_msg.transform.translation.y = pose.Pos[1];
-            pose_msg.transform.translation.z = pose.Pos[2];
-            pose_msg.transform.rotation.w = pose.Rot[0];
-            pose_msg.transform.rotation.x = pose.Rot[1];
-            pose_msg.transform.rotation.y = pose.Rot[2];
-            pose_msg.transform.rotation.z = pose.Rot[3];
+            ros_from_pose(&pose_msg.transform, pose);
             tf_static_broadcaster_->sendTransform(pose_msg);
           }
         }

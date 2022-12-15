@@ -39,6 +39,10 @@ def generate_launch_description():
     return LaunchDescription([
         
         # Options to launch
+        DeclareLaunchArgument('global_frame', default_value='libsurvive_frame',
+            description='Launch in a composable container'),
+        DeclareLaunchArgument('cli_args', default_value='--force-recalibrate',
+            description='Launch in a composable container'),
         DeclareLaunchArgument('composable', default_value='false',
             description='Launch in a composable container'),
         DeclareLaunchArgument('rosbridge', default_value='false',
@@ -53,15 +57,12 @@ def generate_launch_description():
             name='libsurvive_ros2_node',
             condition=UnlessCondition(LaunchConfiguration('composable')),
             output='screen',
-            arguments=[
-                # '--force-calibrate', '1',
-                # '--globalscenesolver', '1',
-                # '--lighthouse-gen', '2',
-                # '--lighthousecount', '2'
-            ]
+            parameters={
+                'cli_args' : LaunchConfiguration('cli_args'),
+            }
         ),
 
-        # Composable launch
+        # Composable launch (zero-copy node example)
         ComposableNodeContainer(
             package='rclcpp_components',
             executable='component_container',
@@ -71,13 +72,13 @@ def generate_launch_description():
                     package='libsurvive_ros2',
                     plugin='libsurvive_ros2::Component',
                     name='libsurvive_ros2_component',
+                    parameters={
+                        'cli_args' : LaunchConfiguration('cli_args')
+                    },
                     extra_arguments=[
                         {'use_intra_process_comms': True}
                     ]
-                ),
-                #
-                # Add whatever other nodes you'd like here
-                #
+                )
             ],
             output='log',
         ),

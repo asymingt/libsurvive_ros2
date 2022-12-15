@@ -35,7 +35,7 @@
 #include <tf2_ros/static_transform_broadcaster.h>
 
 // ROS2 messages
-#include <std_msgs/msg/string.hpp>
+#include <diagnostic_msgs/msg/key_value.hpp>
 #include <sensor_msgs/msg/joy.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <geometry_msgs/msg/point_stamped.hpp>
@@ -62,8 +62,12 @@ private:
   SurviveSimpleContext *actx_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
   std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
+  rclcpp::Publisher<sensor_msgs::msg::Joy>::SharedPtr joy_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_publisher_;
+  rclcpp::Publisher<diagnostic_msgs::msg::KeyValue>::SharedPtr cfg_publisher_;
   std::thread worker_thread_;
   rclcpp::Time last_base_station_update_;
+  std::string world_frame_;
 };
 
 }  // namespace libsurvive_ros2
