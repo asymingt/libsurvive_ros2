@@ -44,15 +44,16 @@ WORKDIR /home/ubuntu
 
 # Copy the code
 RUN mkdir -p /home/ubuntu/ros2_ws/src/libsurvive_ros2
-#COPY --chown=ubuntu:ubuntu . /home/ubuntu/ros2_ws/src/libsurvive_ros2
-#RUN cd /home/ubuntu/ros2_ws \
-# && source /opt/ros/humble/setup.bash \
-# && colcon build --symlink-install --event-handlers console_direct+
+COPY --chown=ubuntu:ubuntu . /home/ubuntu/ros2_ws/src/libsurvive_ros2
+RUN cd /home/ubuntu/ros2_ws \
+&& source /opt/ros/humble/setup.bash \
+&& colcon build --symlink-install --event-handlers console_direct+
 
 # Initialization
-# RUN echo -e "#!/bin/bash \n\
-# set -e\n\
-# source /opt/ros/rolling/setup.bash \n\
-# exec \$@" > /home/libsurvive_ros2_ws/entrypoint.sh
-# RUN chmod 755 /root/entrypoint.sh
-# ENTRYPOINT [ "/root/entrypoint.sh" ]
+RUN echo -e "#!/bin/bash \n\
+set -e\n\
+source /home/ubuntu/ros2_ws/install/setup.bash \n\
+exec \$@" > /home/ubuntu/ros2_ws/entrypoint.sh
+RUN chmod 755 /home/ubuntu/ros2_ws/entrypoint.sh
+ENTRYPOINT [ "/home/ubuntu/ros2_ws/entrypoint.sh" ]
+CMD ["ros2", "launch", "libsurvive_ros2", "libsurvive_ros2.launch.py"]

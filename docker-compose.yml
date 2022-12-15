@@ -1,0 +1,6 @@
+
+[loc] $ ssh -i id_ec2 alex@quitter.tech
+[rem] $ cd ~/CARMA-C1T-ENV
+[rem] $ source .c1t-rc
+[rem] $ ROS_IP=127.0.0.1 c1t start build/refactor c1t
+ 
