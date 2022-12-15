@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 # Default image, user and root directory
-FROM ros:humble-ros-base
+FROM ros:humble-ros-base AS libsurvive_ros2
 SHELL ["/bin/bash", "-c"]
 
 # Install baseline tools
@@ -47,7 +47,7 @@ RUN mkdir -p /home/ubuntu/ros2_ws/src/libsurvive_ros2
 COPY --chown=ubuntu:ubuntu . /home/ubuntu/ros2_ws/src/libsurvive_ros2
 RUN cd /home/ubuntu/ros2_ws \
 && source /opt/ros/humble/setup.bash \
-&& colcon build --symlink-install --event-handlers console_direct+
+&& colcon build --symlink-install
 
 # Initialization
 RUN echo -e "#!/bin/bash \n\
