@@ -24,16 +24,36 @@
 #include <string>
 #include <vector>
 
-void ros_from_pose(
-  geometry_msgs::msg::Transform* const tx, const SurvivePose& pose) {
-  tx->translation.x = pose.Pos[0];
-  tx->translation.y = pose.Pos[1];
-  tx->translation.z = pose.Pos[2];
-  tx->rotation.w = pose.Rot[0];
-  tx->rotation.x = pose.Rot[1];
-  tx->rotation.y = pose.Rot[2];
-  tx->rotation.z = pose.Rot[3];
+// Libsurvive libraries
+extern "C" {
+#include <os_generic.h>
+#include <libsurvive/survive.h>
+#include <libsurvive/survive_api.h>
 }
+
+// Scale factor to move from G to m/s^2.
+constexpr double SI_GRAVITY = 9.80665;
+
+// We can only ever load one version of the driver, so we store a pointer to the instance of the
+// driver here, so the IMU callback can push data to it.
+libsurvive_ros2::Component* _singleton = nullptr;
+
+static void imu_func(SurviveObject *so, int mask, const FLT *accelgyromag, uint32_t timecode, int id) {
+  if (_singleton) {
+    // survive_default_imu_process(so, mask, accelgyromag, timecode, id);
+    // sensor_msgs::msg::Imu imu_msg;
+    // imu_msg.header.frame_id = std::string(serial_number()) + "_imu";
+    // imu_msg.header.stamp = ;
+    // imu_msg.angular_velocity.x = accelgyromag[3];
+    // imu_msg.angular_velocity.y = accelgyromag[4];
+    // imu_msg.angular_velocity.z = accelgyromag[5];
+    // imu_msg.linear_acceleration.x = accelgyromag[0] * SI_GRAVITY;
+    // imu_msg.linear_acceleration.y = accelgyromag[1] * SI_GRAVITY;
+    // imu_msg.linear_acceleration.z = accelgyromag[2] * SI_GRAVITY;
+    // imu_publisher_.publish(imu_msg);
+  }
+}
+
 
 namespace libsurvive_ros2 {
 
@@ -43,8 +63,16 @@ Component::Component(const rclcpp::NodeOptions& options)
   , tf_broadcaster_(std::make_unique<tf2_ros::TransformBroadcaster>(*this))
   , tf_static_broadcaster_(std::make_unique<tf2_ros::StaticTransformBroadcaster>(*this)) {
 
-  this->declare_parameter("world_frame", "libsurvive_frame"); 
-  this->get_parameter("world_frame", world_frame_);
+  // Store a 
+
+  _singleton = this;
+
+  // Setup world frame
+
+  this->declare_parameter("tracking_frame", "libsurvive_frame"); 
+  this->get_parameter("tracking_frame", tracking_frame_);
+
+  // Setup topics
 
   std::string imu_topic;
   this->declare_parameter("imu_topic", "imu"); 
@@ -71,13 +99,17 @@ Component::Component(const rclcpp::NodeOptions& options)
       args.emplace_back(token.c_str());
   }
  
-  // Try and initialize survive with the arguments supplied
+  // Try and initialize survive with the arguments supplied.
   actx_ = survive_simple_init(args.size(), const_cast<char **>(args.data()));
   if (actx_ == nullptr) {
     RCLCPP_FATAL(this->get_logger(), "Could not initialize the libsurvive context");
     return;
   }
 
+  // Setup callback for reading IMU data.
+  SurviveContext *ctx = survive_simple_get_ctx(actx_);
+  survive_install_imu_fn(ctx, imu_func);
+  
   // Initialize the survive thread.
   survive_simple_start_thread(actx_);
 
@@ -112,7 +144,7 @@ void Component::work() {
         if (timecode > 0) {
           geometry_msgs::msg::TransformStamped pose_msg;
           pose_msg.header.stamp = this->get_clock()->now();
-          pose_msg.header.frame_id = world_frame_;
+          pose_msg.header.frame_id = tracking_frame_;
           pose_msg.child_frame_id = survive_simple_serial_number(pose_event->object);
           ros_from_pose(&pose_msg.transform, pose);
           tf_broadcaster_->sendTransform(pose_msg);
@@ -170,7 +202,7 @@ void Component::work() {
           if (timecode > 0) {
             geometry_msgs::msg::TransformStamped pose_msg;
             pose_msg.header.stamp = this->get_clock()->now();
-            pose_msg.header.frame_id = world_frame_;
+            pose_msg.header.frame_id = tracking_frame_;
             pose_msg.child_frame_id = survive_simple_serial_number(it);
             ros_from_pose(&pose_msg.transform, pose);
             tf_static_broadcaster_->sendTransform(pose_msg);

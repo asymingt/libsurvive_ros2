@@ -43,9 +43,10 @@
 
 // Libsurvive libraries
 extern "C" {
+#define SURVIVE_ENABLE_FULL_API
 #include <os_generic.h>
-#include <survive.h>
-#include <survive_api.h>
+#include <libsurvive/survive.h>
+#include <libsurvive/survive_api.h>
 }
 
 namespace libsurvive_ros2 {
@@ -67,7 +68,7 @@ private:
   rclcpp::Publisher<diagnostic_msgs::msg::KeyValue>::SharedPtr cfg_publisher_;
   std::thread worker_thread_;
   rclcpp::Time last_base_station_update_;
-  std::string world_frame_;
+  std::string tracking_frame_;
 };
 
 }  // namespace libsurvive_ros2
