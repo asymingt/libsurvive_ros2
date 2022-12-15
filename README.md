@@ -1,8 +1,9 @@
 # libsurvive_ros2
+**A Steam-free ROS2 driver for republishing Lighthouse 1.0 and 2.0 pose and sensor data**
 
 This is a lightweight ROS2 wrapper around the [libsurvive](https://github.com/cntools/libsurvive) project, which provides a set of drivers for 6DoF rigid body tracking using SteamVR 1.0 and 2.0 hardware. It also listens for inertial, button, configuration and device connection events, and forwards these to various topics.
 
-This hardware is particularly useful to robotics projects, because it provides a cost effective method of obtaining ground truth with a positional accuracy typically in the sub-centimeter, sub-degree range. The final accuracy does depend on the tracking volume, base station number and placement and level of occlusion.
+This hardware is particularly useful to robotics projects, because it provides a cost effective method of obtaining ground truth with a positional accuracy typically in the sub-centimeter, sub-degree range. The final accuracy of course depends on the tracking volume, base station number and placement and level of occlusion, as well as calibration quality.
 
 The driver in this repo is largely based on the ROS1 driver available from [libsurvive](https://github.com/cntools/libsurvive/tree/master/tools/ros_publisher). It has been migrated to ROS2, and refactored slightly -- we use a thread to manage the blocking interaction with libsurvive, so that it doesn't lock the ROS2 callback queue and prevent messages from propagating correctly.
 
@@ -38,7 +39,6 @@ Install docker: https://docs.docker.com/engine/install/ubuntu/
 
 ```sh
 $ docker compose build
-$ docker compose up
 ```
 
 This will checkout a lightweight ROS2 rolling container, augment it with a few system dependencies, checkout and build the code and drop you into a bash shell as user `ubuntu` at the home directory `~/ros2_ws/src`.
@@ -74,10 +74,16 @@ $ source install/setup.bash
 
 # Running the code
 
-The easiest way to run the driver is with:
+To run the driver on containerized installations do the following:
 
 ```sh
-$ ros2 run libsurvive_ros2 libsurvive_ros2.launch.py
+$ docker compose up
+```
+
+Alternatively, to run the driver on native installations run the following:
+
+```sh
+$ ros2 run libsurvive_ros2 libsurvive_ros2.launch.py rosbridge:=true
 ```
 
 There are three launch arguments to `libsurvive_ros2.launch.py` to help get up and running:
@@ -89,21 +95,7 @@ There are three launch arguments to `libsurvive_ros2.launch.py` to help get up a
 
 # Example visualization with Foxglove
 
-Pick your installation mode of choice and when you're ready launch the driver this way:
-
-For a native installation:
-
-```
-$ ros2 run libsurvive_ros2 libsurvive_ros2.launch.py rosbridge:=true
-```
-
-For a containerized installation:
-
-```sh
-$ docker compose up
-```
-
-Now, navigate to [this Foxglove link](https://studio.foxglove.dev/?ds=rosbridge-websocket&ds.url=ws%3A%2F%2Flocalhost%3A9090
+After launch the stack (with `rosbridge:=true`), navigate to [this Foxglove link](https://studio.foxglove.dev/?ds=rosbridge-websocket&ds.url=ws%3A%2F%2Flocalhost%3A9090
 ) and you should see the data streaming:
 
 ![alt text](doc/foxglove.png)
