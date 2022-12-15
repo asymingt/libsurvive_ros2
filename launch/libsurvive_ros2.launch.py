@@ -36,20 +36,26 @@ CFG_FILE = os.path.join(
 )
 
 def generate_launch_description():
+
+    # Sow e don't have to repeat for composable and non-composable versions.
+    parameters = {
+        'tracking_frame' : 'global_frame',
+        'driver_args' : '--force-recalibrate 1',
+        'imu_topic' : 'imu', 
+        'joy_topic' : 'joy',
+        'cfg_topic' : 'cfg'
+    }
+    
     return LaunchDescription([
         
         # Options to launch
-        DeclareLaunchArgument('global_frame', default_value='libsurvive_frame',
-            description='Launch in a composable container'),
-        DeclareLaunchArgument('cli_args', default_value='--force-recalibrate',
-            description='Launch in a composable container'),
         DeclareLaunchArgument('composable', default_value='false',
             description='Launch in a composable container'),
         DeclareLaunchArgument('rosbridge', default_value='false',
             description='Launch a rosbridge'),
         DeclareLaunchArgument('record', default_value='false',
             description='Record data with rosbag'),
-        
+
         # Non-composable launch (regular node) 
         Node(
             package='libsurvive_ros2',
@@ -57,9 +63,7 @@ def generate_launch_description():
             name='libsurvive_ros2_node',
             condition=UnlessCondition(LaunchConfiguration('composable')),
             output='screen',
-            parameters={
-                'cli_args' : LaunchConfiguration('cli_args'),
-            }
+            parameters=parameters
         ),
 
         # Composable launch (zero-copy node example)
@@ -72,9 +76,7 @@ def generate_launch_description():
                     package='libsurvive_ros2',
                     plugin='libsurvive_ros2::Component',
                     name='libsurvive_ros2_component',
-                    parameters={
-                        'cli_args' : LaunchConfiguration('cli_args')
-                    },
+                    parameters=parameters,
                     extra_arguments=[
                         {'use_intra_process_comms': True}
                     ]
@@ -90,7 +92,7 @@ def generate_launch_description():
             name='rosbridge_server_node',
             condition=IfCondition(LaunchConfiguration('rosbridge')),
             parameters=[
-                {"port": 54321},
+                {"port": 9090},
             ],
             output='log'
         ),
