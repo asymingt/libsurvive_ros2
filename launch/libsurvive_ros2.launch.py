@@ -24,11 +24,11 @@ from ament_index_python.packages import get_package_share_directory
 
 import launch
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, DeclareLaunchArgument, ComposableNodeContainer
+from launch.actions import ExecuteProcess, DeclareLaunchArgument
 from launch_ros.descriptions import ComposableNode
 from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import Node, ComposableNodeContainer
 
 BAG_FILE = os.path.join(launch.logging.launch_config.log_dir, "libsurvive.bag")
 CFG_FILE = os.path.join(
@@ -37,18 +37,21 @@ CFG_FILE = os.path.join(
 
 def generate_launch_description():
 
-    # Sow e don't have to repeat for composable and non-composable versions.
-    parameters = {
-        'tracking_frame' : 'global_frame',
-        'driver_args' : '--force-recalibrate 1',
-        'imu_topic' : 'imu', 
-        'joy_topic' : 'joy',
-        'cfg_topic' : 'cfg'
-    }
+    # Sow we don't have to repeat for composable and non-composable versions.
+    parameters = [
+        { 'driver_args'     : '--force-recalibrate 1'   },
+        { 'tracking_frame'  : 'global_frame'            },
+        { 'imu_topic'       : 'imu'                     },
+        { 'joy_topic'       : 'joy'                     },
+        { 'cfg_topic'       : 'cfg'                     },
+        { 'lighthouse_rate' : 4.0                       },
+    ]
     
     return LaunchDescription([
         
         # Options to launch
+        DeclareLaunchArgument('namespace', default_value='libsurvive',
+            description='Namespace for the non-TF topics'),
         DeclareLaunchArgument('composable', default_value='false',
             description='Launch in a composable container'),
         DeclareLaunchArgument('rosbridge', default_value='false',
@@ -61,6 +64,7 @@ def generate_launch_description():
             package='libsurvive_ros2',
             executable='libsurvive_ros2_node',
             name='libsurvive_ros2_node',
+            namespace=LaunchConfiguration('namespace'),
             condition=UnlessCondition(LaunchConfiguration('composable')),
             output='screen',
             parameters=parameters
@@ -71,6 +75,8 @@ def generate_launch_description():
             package='rclcpp_components',
             executable='component_container',
             name='libsurvive_ros2_container',
+            namespace=LaunchConfiguration('namespace'),
+            condition=IfCondition(LaunchConfiguration('composable')),
             composable_node_descriptions=[
                 ComposableNode(
                     package='libsurvive_ros2',

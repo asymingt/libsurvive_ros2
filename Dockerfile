@@ -37,9 +37,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zlib1g-dev
 
 # Add an 'ubuntu' user with dialout and plugdev access
-RUN useradd -ms /bin/bash ubuntu
-RUN usermod -aG dialout ubuntu
-RUN usermod -aG plugdev ubuntu
+RUN useradd -ms /bin/bash ubuntu && echo "ubuntu:ubuntu" | chpasswd
+RUN usermod -aG sudo,dialout,plugdev ubuntu
 USER ubuntu
 WORKDIR /home/ubuntu
 

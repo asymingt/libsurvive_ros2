@@ -55,11 +55,10 @@ class Component : public rclcpp::Node {
 public:
   explicit Component(const rclcpp::NodeOptions & options);
   virtual ~Component();
-
-protected:
-  void work();
-
+  rclcpp::Time get_ros_time(FLT timecode);
+  void publish_imu(const sensor_msgs::msg::Imu& msg);
 private:
+  void work();
   SurviveSimpleContext *actx_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
   std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
@@ -67,8 +66,10 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_publisher_;
   rclcpp::Publisher<diagnostic_msgs::msg::KeyValue>::SharedPtr cfg_publisher_;
   std::thread worker_thread_;
+  rclcpp::Time ros_time_;
   rclcpp::Time last_base_station_update_;
   std::string tracking_frame_;
+  double lighthouse_rate_;
 };
 
 }  // namespace libsurvive_ros2
