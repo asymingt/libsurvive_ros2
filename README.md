@@ -53,7 +53,7 @@ $ colcon build --symlink-install --event-handlers console_direct+
 Install docker: https://docs.docker.com/engine/install/ubuntu/
 
 ```sh
-$ docker build .
+$ docker build -t libsurvive_ros2:humble .
 $ docker compose up
 ```
 
@@ -67,7 +67,7 @@ The easiest way to run the driver is with:
 $ ros2 run libsurvive_ros2 libsurvive_ros2.launch.py
 ```
 
-There are three launch arguments to `libsurvive_ros2.launch.py` to help get stuff up and running:
+There are three launch arguments to `libsurvive_ros2.launch.py` to help get up and running:
 
 - `global_frame = string (default: 'libsurvive_world')` : This is the frame name for the tracking frame. Often you'll want to also broadcast a separate static transform relating this to your world frame. 
 - `cli_args = string (default: --force-recalibrate)` : This is a string of command-line arguments to pass to the libsurvive driver.

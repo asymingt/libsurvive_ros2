@@ -26,7 +26,7 @@ version: '3'
 services:
   libsurvive_ros2:
     container_name: libsurvive_ros2
-    image: libsurvive_ros2
+    image: libsurvive_ros2:humble
     privileged: false
     volumes:
       - /dev/bus/usb:/dev/bus/usb

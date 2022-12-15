@@ -40,7 +40,7 @@ def generate_launch_description():
     # Sow we don't have to repeat for composable and non-composable versions.
     parameters = [
         { 'driver_args'     : f'--force-recalibrate 1 -c {CFG_FILE}'   },
-        { 'tracking_frame'  : 'global_frame'                           },
+        { 'tracking_frame'  : 'libsurvive_world'                       },
         { 'imu_topic'       : 'imu'                                    },
         { 'joy_topic'       : 'joy'                                    },
         { 'cfg_topic'       : 'cfg'                                    },
