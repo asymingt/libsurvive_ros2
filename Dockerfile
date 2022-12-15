@@ -34,6 +34,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libopenblas-dev \
     libusb-1.0-0-dev \
     libx11-dev \
+    ros-humble-rosbridge-server \
     zlib1g-dev
 
 # Add an 'ubuntu' user with dialout and plugdev access
@@ -56,4 +57,4 @@ source /home/ubuntu/ros2_ws/install/setup.bash \n\
 exec \$@" > /home/ubuntu/ros2_ws/entrypoint.sh
 RUN chmod 755 /home/ubuntu/ros2_ws/entrypoint.sh
 ENTRYPOINT [ "/home/ubuntu/ros2_ws/entrypoint.sh" ]
-CMD ["ros2", "launch", "libsurvive_ros2", "libsurvive_ros2.launch.py"]
+

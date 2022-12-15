@@ -53,7 +53,7 @@ $ colcon build --symlink-install --event-handlers console_direct+
 Install docker: https://docs.docker.com/engine/install/ubuntu/
 
 ```sh
-$ docker build -t libsurvive_ros2:humble .
+$ docker compose build
 $ docker compose up
 ```
 

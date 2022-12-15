@@ -69,7 +69,7 @@ static void ros_from_pose(
 namespace libsurvive_ros2 {
 
 Component::Component(const rclcpp::NodeOptions& options)
-  : Node("libsurvive_ros2", options)
+  : Node("libsurvive_ros2")
   , actx_(nullptr)
   , tf_broadcaster_(std::make_unique<tf2_ros::TransformBroadcaster>(*this))
   , tf_static_broadcaster_(std::make_unique<tf2_ros::StaticTransformBroadcaster>(*this)) {
@@ -104,8 +104,8 @@ Component::Component(const rclcpp::NodeOptions& options)
   cfg_publisher_ = this->create_publisher<diagnostic_msgs::msg::KeyValue>(cfg_topic, 10);
 
   std::string driver_args;
-  this->declare_parameter("cli_args", "--force-recalibrate 1"); 
-  this->get_parameter("cli_args", driver_args);
+  this->declare_parameter("driver_args", "--force-recalibrate 1"); 
+  this->get_parameter("driver_args", driver_args);
   std::vector<const char*> args;
   std::stringstream driver_ss(driver_args);
   std::string token;

@@ -43,7 +43,7 @@ ExternalProject_Add(libsurvive
   GIT_REPOSITORY https://github.com/cntools/libsurvive.git
   GIT_TAG v1.01
   CMAKE_ARGS
-    -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}
+    -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}/libsurvive-install
 )
 
 # Find dependencies
@@ -64,11 +64,11 @@ add_library(libsurvive_ros2_component SHARED
   src/component.cpp)
 add_dependencies(libsurvive_ros2_component libsurvive)
 target_include_directories(libsurvive_ros2_component PUBLIC
-  ${CMAKE_CURRENT_BINARY_DIR}/include
-  ${CMAKE_CURRENT_BINARY_DIR}/include/libsurvive
-  ${CMAKE_CURRENT_BINARY_DIR}/include/libsurvive/redist)
+  ${CMAKE_CURRENT_BINARY_DIR}/libsurvive-install/include
+  ${CMAKE_CURRENT_BINARY_DIR}/libsurvive-install/include/libsurvive
+  ${CMAKE_CURRENT_BINARY_DIR}/libsurvive-install/include/libsurvive/redist)
 target_link_directories(libsurvive_ros2_component PUBLIC
-  ${CMAKE_CURRENT_BINARY_DIR}/lib)
+  ${CMAKE_CURRENT_BINARY_DIR}/libsurvive-install/lib)
 target_link_libraries(libsurvive_ros2_component -lsurvive)
 target_compile_definitions(libsurvive_ros2_component
   PRIVATE "COMPOSITION_BUILDING_DLL")
@@ -95,23 +95,36 @@ target_link_libraries(libsurvive_ros2_node
   libsurvive_ros2_component)
 ament_target_dependencies(libsurvive_ros2_node rclcpp)
 
-# Install the ROS2 interface and libsurvive.
+# Install libsurvive
+install(
+  DIRECTORY
+    ${CMAKE_CURRENT_BINARY_DIR}/libsurvive-install/
+  DESTINATION
+    ${CMAKE_INSTALL_PREFIX}
+)
+
+# Install the component
 install(
   TARGETS
     libsurvive_ros2_component
-    libsurvive_ros2_node
-  DESTINATION
-    lib/${PROJECT_NAME})
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin)
 
-# Install the example configuration file.
+# Install the node
+install(
+  TARGETS
+    libsurvive_ros2_node
+  DESTINATION lib/${PROJECT_NAME})
+
+# Install the shared things
 install(
   DIRECTORY
     config
     launch
-  DESTINATION
-    share/${PROJECT_NAME})
+  DESTINATION share/${PROJECT_NAME})
 
-# this must happen before the invocation of ament_package()
+# For testing only
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
