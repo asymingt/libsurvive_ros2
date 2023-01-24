@@ -44,7 +44,7 @@ static void imu_func(SurviveObject *so, int mask, const FLT *accelgyromag, uint3
     FLT timecode = SurviveSensorActivations_runtime(&so->activations, so->activations.last_imu) / FLT(1e6);
     sensor_msgs::msg::Imu imu_msg;
     imu_msg.header.frame_id = std::string(so->serial_number) + "_imu";
-    imu_msg.header.stamp = _singleton->get_ros_time(timecode);
+    imu_msg.header.stamp = _singleton->get_ros_time("inertial", timecode);
     imu_msg.angular_velocity.x = accelgyromag[3];
     imu_msg.angular_velocity.y = accelgyromag[4];
     imu_msg.angular_velocity.z = accelgyromag[5];
@@ -127,10 +127,6 @@ Component::Component(const rclcpp::NodeOptions& options)
   // Initialize the survive thread.
   survive_simple_start_thread(actx_);
 
-  // Perform initial time sync
-	ros_time_ = this->get_clock()->now() -
-    rclcpp::Duration(std::chrono::duration<double>(survive_simple_run_time(actx_)));
-
   // Start the work thread
   worker_thread_ = std::thread(&Component::work, this);
 }
@@ -148,8 +144,8 @@ Component::~Component() {
   _singleton = nullptr;
 }
 
-rclcpp::Time Component::get_ros_time(FLT timecode) {
-  return ros_time_ + rclcpp::Duration(std::chrono::duration<double>(timecode));
+rclcpp::Time Component::get_ros_time(const std::string& str, FLT timecode) {
+  return rclcpp::Time() + rclcpp::Duration(std::chrono::duration<double>(timecode));
 }
 
 void Component::publish_imu(const sensor_msgs::msg::Imu& msg) {
@@ -164,10 +160,6 @@ void Component::work() {
   // Poll for events.
   struct SurviveSimpleEvent event = {};
   while (survive_simple_wait_for_event(actx_, &event) != SurviveSimpleEventType_Shutdown && rclcpp::ok()) {
-    
-    // Perform time sync event to catch overflows
-    ros_time_ = this->get_clock()->now() -
-      rclcpp::Duration(std::chrono::duration<double>(survive_simple_run_time(actx_)));
 
     // Business logic depends on the event type
     switch (event.event_type) {
@@ -180,7 +172,7 @@ void Component::work() {
         auto timecode = survive_simple_object_get_latest_pose(pose_event->object, &pose);
         if (timecode > 0) {
           geometry_msgs::msg::TransformStamped pose_msg;
-          pose_msg.header.stamp = this->get_ros_time(timecode);
+          pose_msg.header.stamp = this->get_ros_time("tracker", timecode);
           pose_msg.header.frame_id = tracking_frame_;
           pose_msg.child_frame_id = survive_simple_serial_number(pose_event->object);
           ros_from_pose(&pose_msg.transform, pose);
@@ -196,7 +188,7 @@ void Component::work() {
       auto obj = button_event->object;
       sensor_msgs::msg::Joy joy_msg;
       joy_msg.header.frame_id = survive_simple_serial_number(button_event->object);
-      joy_msg.header.stamp = this->get_ros_time(button_event->time);
+      joy_msg.header.stamp = this->get_ros_time("button", button_event->time);
       joy_msg.axes.resize(SURVIVE_MAX_AXIS_COUNT);
       joy_msg.buttons.resize(SURVIVE_BUTTON_MAX * 2);
       int64_t mask = survive_simple_object_get_button_mask(obj);
@@ -226,7 +218,7 @@ void Component::work() {
       const struct SurviveSimpleObjectEvent *object_event = survive_simple_get_object_event(&event);
       RCLCPP_INFO(this->get_logger(), "A new device %s was added at time %lf",
         survive_simple_serial_number(object_event->object),
-        this->get_ros_time(object_event->time).seconds ()
+        this->get_ros_time("connect", object_event->time).seconds()
       );
       break;
     }
@@ -253,7 +245,7 @@ void Component::work() {
           auto timecode = survive_simple_object_get_latest_pose(it, &pose);
           if (timecode > 0) {
             geometry_msgs::msg::TransformStamped pose_msg;
-            pose_msg.header.stamp = this->get_ros_time(timecode);
+            pose_msg.header.stamp = this->get_ros_time("lighthouse", timecode);
             pose_msg.header.frame_id = tracking_frame_;
             pose_msg.child_frame_id = survive_simple_serial_number(it);
             ros_from_pose(&pose_msg.transform, pose);
