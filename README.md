@@ -17,7 +17,7 @@ Progress:
 - [x] test imu callback
 - [x] test connect callback
 - [x] fix timestamp errors
-- [ ] fix button callback (does not work on Tracker 2.0)
+- [x] fix button callback (only works on Tracker 2.0 wirelessly via watchman)
 - [ ] fix composable node (not a functional blocker right now)
 - [ ] add linting checks (nice to have)
 - [ ] convert to lifecycle node (nice to have)
