@@ -8,7 +8,6 @@ jobs:
     # arm.xlarge	          8	  32GB	100GB
     # arm.2xlarge	          16	64GB	100GB
     resource_class: arm.medium
-    working_directory: /go/src/github.com/asymingt/libsurvive_ros2
     steps:
       - checkout
       - run:
