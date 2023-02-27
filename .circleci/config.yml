@@ -9,9 +9,8 @@ jobs:
     # arm.2xlarge	          16	64GB	100GB
     resource_class: arm.medium
     steps:
-      - checkout
       - run:
-          name: Install Docker client
+          name: Install docker client
           command: |
             sudo apt-get install ca-certificates curl gnupg lsb-release
             sudo mkdir -m 0755 -p /etc/apt/keyrings
@@ -19,6 +18,11 @@ jobs:
             echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
             sudo apt-get update
             sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+      - checkout
+      - run:
+          name: Run docker compose build  
+          command: |
+            docker compose build libsurvive_ros2
 workflows:
   build:
     jobs:
