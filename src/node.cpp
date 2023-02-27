@@ -18,14 +18,13 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-// STL includes.
+// C++ system
 #include <memory>
 
-// ROS2 includes.
-#include <rclcpp/rclcpp.hpp>
+// Others
+#include "libsurvive_ros2/component.hpp"
+#include "rclcpp/rclcpp.hpp"
 
-// This project includes.
-#include <libsurvive_ros2/component.hpp>
 
 // Main entry point of application.
 int main(int argc, char * argv[])

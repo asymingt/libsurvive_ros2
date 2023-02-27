@@ -21,17 +21,12 @@
 #ifndef LIBSURVIVE_ROS2__COMPONENT_HPP_
 #define LIBSURVIVE_ROS2__COMPONENT_HPP_
 
-// Libsurvive libraries
 #define SURVIVE_ENABLE_FULL_API
+
+// C system
 #include <os_generic.h>
-#include <libsurvive/survive.h>
-#include <libsurvive/survive_api.h>
 
-// ROS2 libraries
-#include <tf2_ros/transform_broadcaster.h>
-#include <tf2_ros/static_transform_broadcaster.h>
-
-// STL libraries
+// C++ system
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -39,15 +34,17 @@
 #include <thread>
 #include <vector>
 
-// ROS2 core
-#include <rclcpp/rclcpp.hpp>
-
-// ROS2 messages
-#include <diagnostic_msgs/msg/key_value.hpp>
-#include <sensor_msgs/msg/joy.hpp>
-#include <sensor_msgs/msg/imu.hpp>
-#include <geometry_msgs/msg/point_stamped.hpp>
-#include <geometry_msgs/msg/pose_stamped.hpp>
+// Other
+#include "diagnostic_msgs/msg/key_value.hpp"
+#include "geometry_msgs/msg/point_stamped.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
+#include "libsurvive/survive_api.h"
+#include "libsurvive/survive.h"
+#include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/imu.hpp"
+#include "sensor_msgs/msg/joy.hpp"
+#include "tf2_ros/static_transform_broadcaster.h"
+#include "tf2_ros/transform_broadcaster.h"
 
 namespace libsurvive_ros2
 {

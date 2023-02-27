@@ -1,0 +1,71 @@
+version: 2.1
+jobs:
+  checkout_build_test:
+    parameters:
+      resource_class:
+        default: "medium"
+        type: string
+      arch:
+        default: "amd64"
+        type: string
+      ros_distro:
+        default: "rolling"
+        type: string
+    machine:
+      image: ubuntu-2204:current
+    resource_class: << parameters.resource_class >>
+    description: "Checkout, build, and test for << parameters.arch >>/<< parameters.ros_distro >>"
+    steps:
+      - checkout
+      - run:
+          name: Install docker client
+          command: |
+            sudo apt-get install ca-certificates curl gnupg lsb-release
+            sudo mkdir -m 0755 -p /etc/apt/keyrings
+            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+            sudo apt-get update
+            sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+      - run:
+          name: Build code 
+          command: |
+            docker compose build libsurvive_ros2 --build-arg ARCH=<< parameters.arch >> --build-arg ROS_DISTRO=<< parameters.ros_distro >>
+      - run:
+          name: Test code
+          command: |
+            docker compose run libsurvive_ros2 colcon test --packages-select libsurvive_ros2 --return-code-on-test-failure --event-handlers console_direct+
+workflows:
+  build:
+    jobs:
+      - checkout_build_test:
+          resource_class: arm.medium
+          arch: arm64v8
+          ros_distro: foxy
+      - checkout_build_test:
+          resource_class: arm.medium
+          arch: arm64v8
+          ros_distro: galactic
+      - checkout_build_test:
+          resource_class: arm.medium
+          arch: arm64v8
+          ros_distro: humble
+      - checkout_build_test:
+          resource_class: arm.medium
+          arch: arm64v8
+          ros_distro: rolling
+      - checkout_build_test:
+          resource_class: medium
+          arch: amd64
+          ros_distro: foxy
+      - checkout_build_test:
+          resource_class: medium
+          arch: amd64
+          ros_distro: galactic
+      - checkout_build_test:
+          resource_class: medium
+          arch: amd64
+          ros_distro: humble
+      - checkout_build_test:
+          resource_class: medium
+          arch: amd64
+          ros_distro: rolling
