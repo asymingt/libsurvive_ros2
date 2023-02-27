@@ -20,41 +20,55 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+ARG ROS_DISTRO=humble
+ARG ARCH=amd64
+
 # Default image, user and root directory
-FROM ros:humble-ros-base AS libsurvive_ros2
+FROM ${ARCH}/ros:${ROS_DISTRO}-ros-base
 SHELL ["/bin/bash", "-c"]
 
 # Install baseline tools
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    cmake \
-    freeglut3-dev \
-    libatlas-base-dev \
-    liblapacke-dev \
-    libopenblas-dev \
-    libusb-1.0-0-dev \
-    libx11-dev \
-    ros-humble-rosbridge-server \
-    zlib1g-dev
+RUN apt-get update && apt-get install -y --no-install-recommends                \
+        build-essential                                                         \
+        cmake                                                                   \
+        freeglut3-dev                                                           \
+        libatlas-base-dev                                                       \
+        liblapacke-dev                                                          \
+        libopenblas-dev                                                         \
+        libpcap-dev                                                             \
+        libusb-1.0-0-dev                                                        \
+        libx11-dev                                                              \
+        sudo                                                                    \
+        zlib1g-dev                                                              \
+    && sudo rm -rf /var/lib/apt/lists/*
 
-# Add an 'ubuntu' user with dialout and plugdev access
+# Add an 'ubuntu' user with dialout/plugdev access and can use sudo passwordless.
 RUN useradd -ms /bin/bash ubuntu && echo "ubuntu:ubuntu" | chpasswd
 RUN usermod -aG sudo,dialout,plugdev ubuntu
-USER ubuntu
-WORKDIR /home/ubuntu
+RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
-# Copy the code
+# Switch to the non-root user.
+USER ubuntu
+
+# Copy the source code into our test workspace.
 RUN mkdir -p /home/ubuntu/ros2_ws/src/libsurvive_ros2
 COPY --chown=ubuntu:ubuntu . /home/ubuntu/ros2_ws/src/libsurvive_ros2
-RUN cd /home/ubuntu/ros2_ws \
-&& source /opt/ros/humble/setup.bash \
-&& colcon build --symlink-install
+
+# Install baseline tools
+RUN sudo apt-get update                                                         \
+    && cd /home/ubuntu/ros2_ws                                                  \
+    && rosdep update                                                            \
+    && rosdep install --from-paths src --ignore-src -r -y                       \
+    && source /opt/ros/$ROS_DISTRO/setup.bash                                   \
+    && colcon build                                                             \
+    && sudo rm -rf /var/lib/apt/lists/*
 
 # Initialization
 RUN echo -e "#!/bin/bash \n\
 set -e\n\
-source /home/ubuntu/ros2_ws/install/setup.bash \n\
+source /opt/ros/$ROS_DISTRO/setup.bash \n\
 exec \$@" > /home/ubuntu/ros2_ws/entrypoint.sh
 RUN chmod 755 /home/ubuntu/ros2_ws/entrypoint.sh
+WORKDIR /home/ubuntu/ros2_ws
 ENTRYPOINT [ "/home/ubuntu/ros2_ws/entrypoint.sh" ]
 

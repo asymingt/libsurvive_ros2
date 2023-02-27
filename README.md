@@ -18,9 +18,11 @@ Progress:
 - [x] test connect callback
 - [x] fix timestamp errors
 - [x] fix button callback (only works on Tracker 2.0 wirelessly via watchman)
+- [x] add linting checks (nice to have)
+- [ ] add unit tests
 - [ ] fix composable node (not a functional blocker right now)
-- [ ] add linting checks (nice to have)
 - [ ] convert to lifecycle node (nice to have)
+- [ ] add circlce, mergify and dependebot integration
 
 # Installation instructions
 
@@ -36,17 +38,25 @@ sudo udevadm control --reload-rules && udevadm trigger
 
 You can now choose to build the driver natively or in a container. The benefit of launching it within a container is that it won't interfere with any pre-existing ROS installation on your machine. However, you will need docker-ce and the compose plugin for things to work.
 
-## Containerized installation (easier)
+## Containerized build and test (easiest and recommended)
 
-Install docker: https://docs.docker.com/engine/install/ubuntu/
+Install docker and docker-compose: https://docs.docker.com/engine/install/ubuntu/
 
 ```sh
 $ docker compose build
+$ docker compose run libsurvive_ros2 colcon test
 ```
 
-This will checkout a lightweight ROS2 rolling container, augment it with a few system dependencies, checkout and build the code and drop you into a bash shell as user `ubuntu` at the home directory `~/ros2_ws/src`.
+This will checkout a lightweight ROS2 rolling container, augment it with a few system dependencies, checkout and build the code and drop you into a bash shell as user `ubuntu` at the home directory `~/ros2_ws/src`. If you'd rather build and test for ROS2 Foxy on arm64, as an example, you'd do this:
 
-## Native installation (more flexible)
+```sh
+$ docker compose build --build-arg ARCH=arm64 --build-arg ROS_DISTRO=foxy
+$ docker compose run libsurvive_ros2 colcon test  # optional, to test the package
+```
+
+Note that if you are building on a different architecture than the host you must follow the docker/QEMU installation instructions here before running the command above. Here is a link to a document outlining how this is done: https://docs.nvidia.com/datacenter/cloud-native/playground/x-arch.html
+
+## Native build and test (not recommended)
 
 You'll need ROS2 installed: https://docs.ros.org/en/humble/Installation.html
 
@@ -54,24 +64,28 @@ You'll also need to follow the instructions here:
 
 ```sh
 sudo apt-get install build-essential \
-    zlib1g-dev \
-    libx11-dev \
-    libusb-1.0-0-dev \
+    cmake \
     freeglut3-dev \
+    libatlas-base-dev \
     liblapacke-dev \
     libopenblas-dev \
-    libatlas-base-dev \
-    cmake
+    libpcap-dev \
+    libusb-1.0-0-dev \
+    libx11-dev \
+    zlib1g-dev
 ```
 
-Finally source ROS2, create a workspace, checkout, compile and source the code:
+Finally source ROS2, create a workspace, checkout, compile and test:
 
-```
+```sh
 $ mkdir ~/ros2_ws/src
 $ cd  ~/ros2_ws/src
 $ git clone https://github.com/asymingt/libsurvive_ros2.git
 $ cd ..
+$ rosdep update
+$ rosdep install --from-paths src --ignore-src -r -y
 $ colcon build
+$ colcon test  # optional, to test the package
 $ source install/setup.bash
 ```
 

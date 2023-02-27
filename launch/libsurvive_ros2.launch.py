@@ -30,93 +30,96 @@ from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node, ComposableNodeContainer
 
+# Bag to save data
 BAG_FILE = os.path.join(launch.logging.launch_config.log_dir, "libsurvive.bag")
+
+# Default libsurvive configuration file
 CFG_FILE = os.path.join(
     get_package_share_directory('libsurvive_ros2'), 'config', 'config.json'
 )
 
+# Sow we don't have to repeat for composable and non-composable versions.
+PARAMETERS = [
+    {'driver_args': f'--force-recalibrate 1 -c {CFG_FILE}'},
+    {'tracking_frame': 'libsurvive_world'},
+    {'imu_topic': 'imu'},
+    {'joy_topic': 'joy'},
+    {'cfg_topic': 'cfg'},
+    {'lighthouse_rate': 4.0}]
+
+
 def generate_launch_description():
-
-    # Sow we don't have to repeat for composable and non-composable versions.
-    parameters = [
-        { 'driver_args'     : f'--force-recalibrate 1 -c {CFG_FILE}'   },
-        { 'tracking_frame'  : 'libsurvive_world'                       },
-        { 'imu_topic'       : 'imu'                                    },
-        { 'joy_topic'       : 'joy'                                    },
-        { 'cfg_topic'       : 'cfg'                                    },
-        { 'lighthouse_rate' : 4.0                                      },
-    ]
-    
-    return LaunchDescription([
-        
-        # Options to launch
+    arguments = [
         DeclareLaunchArgument('namespace', default_value='libsurvive',
-            description='Namespace for the non-TF topics'),
+                              description='Namespace for the non-TF topics'),
         DeclareLaunchArgument('composable', default_value='false',
-            description='Launch in a composable container'),
+                              description='Launch in a composable container'),
         DeclareLaunchArgument('rosbridge', default_value='false',
-            description='Launch a rosbridge'),
+                              description='Launch a rosbridge'),
         DeclareLaunchArgument('record', default_value='false',
-            description='Record data with rosbag'),
+                              description='Record data with rosbag')]
 
-        # Non-composable launch (regular node) 
-        Node(
-            package='libsurvive_ros2',
-            executable='libsurvive_ros2_node',
-            name='libsurvive_ros2_node',
-            namespace=LaunchConfiguration('namespace'),
-            condition=UnlessCondition(LaunchConfiguration('composable')),
-            output='screen',
-            parameters=parameters
-        ),
+    # Non-composable launch (regular node)
+    libsurvive_node = Node(
+        package='libsurvive_ros2',
+        executable='libsurvive_ros2_node',
+        name='libsurvive_ros2_node',
+        namespace=LaunchConfiguration('namespace'),
+        condition=UnlessCondition(LaunchConfiguration('composable')),
+        output='screen',
+        parameters=PARAMETERS)
 
-        # Composable launch (zero-copy node example)
-        ComposableNodeContainer(
-            package='rclcpp_components',
-            executable='component_container',
-            name='libsurvive_ros2_container',
-            namespace=LaunchConfiguration('namespace'),
-            condition=IfCondition(LaunchConfiguration('composable')),
-            composable_node_descriptions=[
-                ComposableNode(
-                    package='libsurvive_ros2',
-                    plugin='libsurvive_ros2::Component',
-                    name='libsurvive_ros2_component',
-                    parameters=parameters,
-                    extra_arguments=[
-                        {'use_intra_process_comms': True}
-                    ]
-                )
-            ],
-            output='log',
-        ),
-            
-        # For bridging connection to foxglove running on a remote server.
-        Node(
-            package='rosbridge_server',
-            executable='rosbridge_websocket',
-            name='rosbridge_server_node',
-            condition=IfCondition(LaunchConfiguration('rosbridge')),
-            parameters=[
-                {"port": 9090},
-            ],
-            output='log'
-        ),
-        Node(
-            package='rosapi',
-            executable='rosapi_node',
-            name='rosapi_node',
-            condition=IfCondition(LaunchConfiguration('rosbridge')),
-            output='log'
-        ),
-        
-        # For recording all data from the experiment
-        ExecuteProcess(
-            cmd=['ros2', 'bag', 'record', '-o', BAG_FILE] + [
-                '/tf',
-                '/tf_static'
-            ],
-            condition=IfCondition(LaunchConfiguration('record')),
-            output='log'
-        )
-    ])
+    # Composable launch (zero-copy node example)
+    libsurvive_composable_node = ComposableNodeContainer(
+        package='rclcpp_components',
+        executable='component_container',
+        name='libsurvive_ros2_container',
+        namespace=LaunchConfiguration('namespace'),
+        condition=IfCondition(LaunchConfiguration('composable')),
+        composable_node_descriptions=[
+            ComposableNode(
+                package='libsurvive_ros2',
+                plugin='libsurvive_ros2::Component',
+                name='libsurvive_ros2_component',
+                parameters=PARAMETERS,
+                extra_arguments=[
+                    {'use_intra_process_comms': True}
+                ]
+            )
+        ],
+        output='log')
+
+    # For bridging connection to foxglove running on a remote server.
+    rosbridge_node = Node(
+        package='rosbridge_server',
+        executable='rosbridge_websocket',
+        name='rosbridge_server_node',
+        condition=IfCondition(LaunchConfiguration('rosbridge')),
+        parameters=[
+            {"port": 9090},
+        ],
+        output='log')
+    rosapi_node = Node(
+        package='rosapi',
+        executable='rosapi_node',
+        name='rosapi_node',
+        condition=IfCondition(LaunchConfiguration('rosbridge')),
+        output='log')
+
+    # For recording all data from the experiment
+    bag_record_node = ExecuteProcess(
+        cmd=['ros2', 'bag', 'record', '-o', BAG_FILE] + [
+            '/tf',
+            '/tf_static'
+        ],
+        condition=IfCondition(LaunchConfiguration('record')),
+        output='log')
+
+    return LaunchDescription(
+        arguments + [
+            libsurvive_node,
+            libsurvive_composable_node,
+            rosbridge_node,
+            rosapi_node,
+            bag_record_node
+        ])

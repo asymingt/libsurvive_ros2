@@ -39,7 +39,7 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 
 # Find the core interface library
 include(ExternalProject)
-ExternalProject_Add(libsurvive
+externalproject_add(libsurvive
   GIT_REPOSITORY https://github.com/cntools/libsurvive.git
   GIT_TAG master
   CMAKE_ARGS
