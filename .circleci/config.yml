@@ -2,18 +2,18 @@ version: 2.1
 jobs:
   checkout_build_test:
     parameters:
-      machine:
-        default: "arm.medium"
+      resource_class:
+        default: "medium"
         type: string
       arch:
         default: "amd64"
         type: string
       ros_distro:
-        default: "humble"
+        default: "rolling"
         type: string
     machine:
       image: ubuntu-2204:current
-    resource_class: << parameters.machine >>
+    resource_class: << parameters.resource_class >>
     steps:
       - checkout
       - run:
@@ -37,18 +37,34 @@ workflows:
   build:
     jobs:
       - checkout_build_test:
-          machine: arm.medium
+          resource_class: arm.medium
           arch: arm64
           ros_distro: foxy
       - checkout_build_test:
-          machine: arm.medium
+          resource_class: arm.medium
           arch: arm64
           ros_distro: galactic
       - checkout_build_test:
-          machine: arm.medium
+          resource_class: arm.medium
           arch: arm64
           ros_distro: humble
       - checkout_build_test:
-          machine: arm.medium
+          resource_class: arm.medium
           arch: arm64
+          ros_distro: rolling
+      - checkout_build_test:
+          resource_class: medium
+          arch: amd64
+          ros_distro: foxy
+      - checkout_build_test:
+          resource_class: medium
+          arch: amd64
+          ros_distro: galactic
+      - checkout_build_test:
+          resource_class: medium
+          arch: amd64
+          ros_distro: humble
+      - checkout_build_test:
+          resource_class: medium
+          arch: amd64
           ros_distro: rolling
