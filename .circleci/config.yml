@@ -14,6 +14,7 @@ jobs:
     machine:
       image: ubuntu-2204:current
     resource_class: << parameters.resource_class >>
+    description: "Checkout, build, and test for << parameters.arch >>/<< parameters.ros_distro >>"
     steps:
       - checkout
       - run:
@@ -32,25 +33,25 @@ jobs:
       - run:
           name: Test code
           command: |
-            docker compose run libsurvive_ros2 colcon test --packages-select libsurvive_ros2 --event-handlers console_direct+
+            docker compose run libsurvive_ros2 colcon test --packages-select libsurvive_ros2 --return-code-on-test-failure
 workflows:
   build:
     jobs:
       - checkout_build_test:
           resource_class: arm.medium
-          arch: arm64
+          arch: arm64v8
           ros_distro: foxy
       - checkout_build_test:
           resource_class: arm.medium
-          arch: arm64
+          arch: arm64v8
           ros_distro: galactic
       - checkout_build_test:
           resource_class: arm.medium
-          arch: arm64
+          arch: arm64v8
           ros_distro: humble
       - checkout_build_test:
           resource_class: arm.medium
-          arch: arm64
+          arch: arm64v8
           ros_distro: rolling
       - checkout_build_test:
           resource_class: medium
