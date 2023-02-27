@@ -1,13 +1,6 @@
 version: 2.1
-jobs:
-  "arm64-rolling":
-    machine:
-      image: ubuntu-2204:current
-    # arm.medium (default)	2	  8GB	  100GB
-    # arm.large	            4	  16GB	100GB
-    # arm.xlarge	          8	  32GB	100GB
-    # arm.2xlarge	          16	64GB	100GB
-    resource_class: arm.medium
+commands:
+  install_docker:
     steps:
       - run:
           name: Install docker client
@@ -18,13 +11,40 @@ jobs:
             echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
             sudo apt-get update
             sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+jobs:
+  checkout_build_test:
+    parameters:
+      machine:
+        default: "arm.medium"
+        type: string
+      arch:
+        default: "amd64"
+        type: string
+      ros_distro:
+        default: "humble"
+        type: string
+    machine:
+      image: ubuntu-2204:current
+    resource_class: << parameters.machine >>
+    steps:
+      - install_docker
       - checkout
       - run:
-          name: Run docker compose build  
+          name: Build code 
           command: |
-            docker compose build libsurvive_ros2
+            docker compose build libsurvive_ros2 --build-arg ARCH=<< parameters.arch >> ROS_DISTRO=<< parameters.ros_distro >>
+      - run:
+          name: Test code
+          command: |
+            docker compose run libsurvive_ros2 colcon test --packages-select libsurvive_ros2 --event-handlers console_direct+
 workflows:
   build:
     jobs:
-      - "arm64-rolling"
+      - checkout_build_test:
+          machine: arm.medium
+          arch: amd64
+          ros_distro: humble
+        
+          
 
