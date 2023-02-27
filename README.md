@@ -18,9 +18,11 @@ Progress:
 - [x] test connect callback
 - [x] fix timestamp errors
 - [x] fix button callback (only works on Tracker 2.0 wirelessly via watchman)
+- [ ] add unit tests
 - [ ] fix composable node (not a functional blocker right now)
 - [ ] add linting checks (nice to have)
 - [ ] convert to lifecycle node (nice to have)
+- [ ] add circlce, mergify and dependebot integration
 
 # Installation instructions
 

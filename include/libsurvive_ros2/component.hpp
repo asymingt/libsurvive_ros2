@@ -21,18 +21,26 @@
 #ifndef LIBSURVIVE_ROS2__COMPONENT_HPP_
 #define LIBSURVIVE_ROS2__COMPONENT_HPP_
 
+// Libsurvive libraries
+#define SURVIVE_ENABLE_FULL_API
+#include <os_generic.h>
+#include <libsurvive/survive.h>
+#include <libsurvive/survive_api.h>
+
+// ROS2 libraries
+#include <tf2_ros/transform_broadcaster.h>
+#include <tf2_ros/static_transform_broadcaster.h>
+
 // STL libraries
-#include <mutex>
 #include <cstdint>
+#include <memory>
+#include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 
 // ROS2 core
 #include <rclcpp/rclcpp.hpp>
-
-// ROS2 libraries
-#include <tf2_ros/transform_broadcaster.h>
-#include <tf2_ros/static_transform_broadcaster.h>
 
 // ROS2 messages
 #include <diagnostic_msgs/msg/key_value.hpp>
@@ -41,25 +49,20 @@
 #include <geometry_msgs/msg/point_stamped.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 
-// Libsurvive libraries
-extern "C" {
-#define SURVIVE_ENABLE_FULL_API
-#include <os_generic.h>
-#include <libsurvive/survive.h>
-#include <libsurvive/survive_api.h>
-}
+namespace libsurvive_ros2
+{
 
-namespace libsurvive_ros2 {
-
-class Component : public rclcpp::Node {
+class Component : public rclcpp::Node
+{
 public:
   explicit Component(const rclcpp::NodeOptions & options);
   virtual ~Component();
-  rclcpp::Time get_ros_time(const std::string& str, FLT timecode);
-  void publish_imu(const sensor_msgs::msg::Imu& msg);
+  rclcpp::Time get_ros_time(const std::string & str, FLT timecode);
+  void publish_imu(const sensor_msgs::msg::Imu & msg);
+
 private:
   void work();
-  SurviveSimpleContext *actx_;
+  SurviveSimpleContext * actx_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
   std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
   rclcpp::Publisher<sensor_msgs::msg::Joy>::SharedPtr joy_publisher_;
