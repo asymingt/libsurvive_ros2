@@ -18,7 +18,15 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#include <libsurvive_ros2/component.hpp>
+// C++ system
+#include <memory>
+#include <string>
+#include <vector>
+
+// Other
+#include "libsurvive_ros2/component.hpp"
+#include "rclcpp_components/register_node_macro.hpp"
+
 
 // Scale factor to move from G to m/s^2.
 constexpr double SI_GRAVITY = 9.80665;
@@ -63,10 +71,10 @@ namespace libsurvive_ros2
 {
 
 Component::Component(const rclcpp::NodeOptions & options)
-: Node("libsurvive_ros2", options)
-  , actx_(nullptr)
-  , tf_broadcaster_(std::make_unique<tf2_ros::TransformBroadcaster>(*this))
-  , tf_static_broadcaster_(std::make_unique<tf2_ros::StaticTransformBroadcaster>(*this))
+: Node("libsurvive_ros2", options),
+  actx_(nullptr),
+  tf_broadcaster_(std::make_unique<tf2_ros::TransformBroadcaster>(*this)),
+  tf_static_broadcaster_(std::make_unique<tf2_ros::StaticTransformBroadcaster>(*this))
 {
   // Store the instance globally to be used by a C callback.
   _singleton = this;
@@ -265,8 +273,6 @@ void Component::work()
 }
 
 }  // namespace libsurvive_ros2
-
-#include <rclcpp_components/register_node_macro.hpp>
 
 // Register the component with class_loader.
 // This acts as a sort of entry point, allowing the component to be discoverable when its library

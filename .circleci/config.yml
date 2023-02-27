@@ -33,7 +33,7 @@ jobs:
       - run:
           name: Test code
           command: |
-            docker compose run libsurvive_ros2 colcon test --packages-select libsurvive_ros2 --return-code-on-test-failure
+            docker compose run libsurvive_ros2 colcon test --packages-select libsurvive_ros2 --return-code-on-test-failure --event-handlers console_direct+
 workflows:
   build:
     jobs:
