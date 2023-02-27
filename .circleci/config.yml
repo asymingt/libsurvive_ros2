@@ -2,7 +2,7 @@ version: 2.1
 jobs:
   "arm64-rolling":
     machine:
-      image: ubuntu2204:current
+      image: ubuntu-2204:current
     # arm.medium (default)	2	  8GB	  100GB
     # arm.large	            4	  16GB	100GB
     # arm.xlarge	          8	  32GB	100GB
