@@ -1,6 +1,8 @@
 # libsurvive_ros2
 **A Steam-free driver for republishing Lighthouse 1.0 and 2.0 pose and sensor data to ROS2**
 
+[![CI Status](https://circleci.com/gh/asymingt/libsurvive_ros2.svg?style=svg)](https://app.circleci.com/pipelines/github/asymingt/libsurvive_ros2)
+
 This is a lightweight ROS2 wrapper around the [libsurvive](https://github.com/cntools/libsurvive) project, which provides a set of drivers for 6DoF rigid body tracking using SteamVR 1.0 and 2.0 hardware. It also listens for inertial, button, configuration and device connection events, and forwards these to various topics.
 
 This hardware is particularly useful to robotics projects, because it provides a cost effective method of obtaining ground truth with a positional accuracy typically in the sub-centimeter, sub-degree range. The final accuracy of course depends on the tracking volume, base station number and placement and level of occlusion, as well as calibration quality.
