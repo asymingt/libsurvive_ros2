@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2022 Andrew Symington
+# Copyright (c) 2023 Andrew Symington
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -66,7 +66,7 @@ RUN sudo apt-get update                                                         
 # Initialization
 RUN echo -e "#!/bin/bash \n\
 set -e\n\
-source /opt/ros/$ROS_DISTRO/setup.bash \n\
+source /home/ubuntu/ros2_ws/install/setup.bash \n\
 exec \$@" > /home/ubuntu/ros2_ws/entrypoint.sh
 RUN chmod 755 /home/ubuntu/ros2_ws/entrypoint.sh
 WORKDIR /home/ubuntu/ros2_ws
