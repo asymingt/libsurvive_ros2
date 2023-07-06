@@ -31,4 +31,6 @@ services:
       - /dev/bus/usb:/dev/bus/usb
     ports:
       - "9090:9090"
-    command: ros2 launch libsurvive_ros2 libsurvive_ros2.launch.py rosbridge:=true composable:=true
+    entrypoint: /home/ubuntu/ros2_ws/entrypoint.sh
+    working_dir: /home/ubuntu/ros2_ws
+    command: ros2 launch libsurvive_ros2 libsurvive_ros2.launch.py rosbridge:=true composable:=false
