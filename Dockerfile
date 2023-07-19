@@ -32,6 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends                
         build-essential                                                         \
         cmake                                                                   \
         freeglut3-dev                                                           \
+        gdb                                                                     \
         libatlas-base-dev                                                       \
         liblapacke-dev                                                          \
         libopenblas-dev                                                         \
@@ -39,6 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends                
         libusb-1.0-0-dev                                                        \
         libx11-dev                                                              \
         sudo                                                                    \
+        valgrind                                                                \
         zlib1g-dev                                                              \
     && sudo rm -rf /var/lib/apt/lists/*
 
