@@ -44,6 +44,7 @@ externalproject_add(libsurvive
   GIT_TAG master
   CMAKE_ARGS
     -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}/libsurvive-install
+    -DCMAKE_BUILD_TYPE=Release
 )
 
 # Find dependencies
