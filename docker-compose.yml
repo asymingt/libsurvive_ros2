@@ -21,14 +21,17 @@
 # SOFTWARE.
 
 # Docker Compose Spec Version
-version: '3'
+# See: https://docs.docker.com/compose/compose-file/compose-versioning/#version-3
+version: '3.6'
 
 services:
   libsurvive_ros2:
     privileged: false
-    build: .
+    device_cgroup_rules:
+      - 'c *:* rmw'
     volumes:
-      - /dev/bus/usb:/dev/bus/usb
+      - /dev:/dev
+    build: .
     ports:
       - "9090:9090"
     entrypoint: /home/ubuntu/ros2_ws/entrypoint.sh
