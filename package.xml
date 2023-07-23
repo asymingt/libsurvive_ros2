@@ -1,28 +1,56 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-
+  
+  <!-- General information -->
+  
   <name>libsurvive_ros2</name>
-
   <version>0.0.1</version>
-
   <description>libsurvive driver for ROS2</description>
-
   <maintainer email="andrew.c.symington@gmail.com">Andrew Symington</maintainer>
-
   <license>MIT</license>
 
-  <depend>rclcpp</depend>
+  <!-- Dependencies required at build, execute or test times -->
+
+  <depend>boost</depend>
+  <depend>eigen</depend>
+  <depend>tbb</depend>
+
   <depend>rclcpp_components</depend>
+  <depend>rclcpp</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2</depend>
+
   <depend>diagnostic_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
-  <depend>tf2</depend>
-  <depend>tf2_ros</depend>
+
+  <!-- Build-time dependencies -->
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>rosidl_default_generators</buildtool_depend>
   
-  <exec_depend>rosbridge_suite</exec_depend>
+  <!-- Run-time dependencies -->
+  
+  <exec_depend>rosidl_default_runtime</exec_depend>
+  <exec_depend>foxglove_bridge</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-scipy</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>rosbag2_storage_mcap</exec_depend>
+
+  <!-- Test-time dependencies -->
+  
+  <test_depend>ament_cmake_ros</test_depend>
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
+  <test_depend>launch_pytest</test_depend>
+
+  <!-- Name of a dependency group of which the package is a member -->
+  
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <!-- Additional information various packages and subsystems -->
 
   <export>
     <build_type>ament_cmake</build_type>

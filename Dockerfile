@@ -37,8 +37,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends                
         liblapacke-dev                                                          \
         libopenblas-dev                                                         \
         libpcap-dev                                                             \
+        libsciplot-dev                                                          \
         libusb-1.0-0-dev                                                        \
         libx11-dev                                                              \
+        libyaml-cpp-dev                                                         \
         sudo                                                                    \
         valgrind                                                                \
         zlib1g-dev                                                              \
@@ -62,12 +64,13 @@ RUN sudo apt-get update                                                         
     && rosdep update                                                            \
     && rosdep install --from-paths src --ignore-src -r -y                       \
     && source /opt/ros/$ROS_DISTRO/setup.bash                                   \
-    && colcon build                                                             \
+    && colcon build --symlink-install                                           \
     && sudo rm -rf /var/lib/apt/lists/*
 
 # Initialization
 RUN echo -e "#!/bin/bash \n\
 set -e\n\
+source /opt/ros/${ROS_DISTRO}/setup.bash\n\
 source /home/ubuntu/ros2_ws/install/setup.bash \n\
 exec \$@" > /home/ubuntu/ros2_ws/entrypoint.sh
 RUN chmod 755 /home/ubuntu/ros2_ws/entrypoint.sh

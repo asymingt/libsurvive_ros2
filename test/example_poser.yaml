@@ -1,0 +1,38 @@
+# Copyright 2023 Andrew Symington
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+#
+# This file allows you to declare rigid bodies and the trackers attached to
+# them. This is useful if you are trying to track a robot in a large space,
+# where periodically trackers go out of sight of lighthouses. So, we rely on
+# redundancy to increase robustness, but also accuracy.
+#
+# Note that "poses" describes the bTh transform, which moves a point from
+# the head frame (the frame described as the "Coordinate system" of the
+# vive tracker, centered on the 1/4" bolt) denoted 'h' to the rigid body.
+# frame, which we denote 'b'. In the example below we mount trackers on a
+# 30cm ruler "wand", with Y running along the ruler length.
+#
+rigid_bodies:
+  - body_id: "rigid_body/wand"
+    trackers:
+      - tracker_id: LHR-74EFB987
+        bTh: [0.0,  0.15, 0.0, 1.0, 0.0, 0.0, 0.0]
+      - tracker_id: LHR-933F150A
+        bTh: [0.0, -0.15, 0.0, 1.0, 0.0, 0.0, 0.0]

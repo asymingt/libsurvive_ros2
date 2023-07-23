@@ -52,6 +52,10 @@ workflows:
       - checkout_build_test:
           resource_class: arm.medium
           arch: arm64v8
+          ros_distro: irwin
+      - checkout_build_test:
+          resource_class: arm.medium
+          arch: arm64v8
           ros_distro: rolling
       - checkout_build_test:
           resource_class: medium
@@ -65,6 +69,10 @@ workflows:
           resource_class: medium
           arch: amd64
           ros_distro: humble
+      - checkout_build_test:
+          resource_class: medium
+          arch: amd64
+          ros_distro: irwin
       - checkout_build_test:
           resource_class: medium
           arch: amd64
