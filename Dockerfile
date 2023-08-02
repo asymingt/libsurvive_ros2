@@ -33,11 +33,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends                
         cmake                                                                   \
         freeglut3-dev                                                           \
         gdb                                                                     \
+        libboost-all-dev                                                        \
         libatlas-base-dev                                                       \
         liblapacke-dev                                                          \
         libopenblas-dev                                                         \
+        libtbb-dev                                                              \
         libpcap-dev                                                             \
-        libsciplot-dev                                                          \
         libusb-1.0-0-dev                                                        \
         libx11-dev                                                              \
         libyaml-cpp-dev                                                         \
