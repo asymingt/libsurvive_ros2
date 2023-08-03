@@ -59,20 +59,21 @@ externalproject_add(libsurvive
 )
 
 # Obtain a specific version of the GTSAM estimation software.
-include(ExternalProject)
-externalproject_add(gtsam
-  GIT_REPOSITORY https://github.com/borglab/gtsam.git
-  GIT_TAG 621ef2e7c560e6fb06b463769d9cf7bc6f626308
-  CMAKE_ARGS
-    -DCMAKE_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
-    -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
-    -DCMAKE_BUILD_TYPE=Release
-    -DGTSAM_BUILD_PYTHON=1
-)
+# include(ExternalProject)
+# externalproject_add(gtsam
+#   GIT_REPOSITORY https://github.com/borglab/gtsam.git
+#   GIT_TAG 621ef2e7c560e6fb06b463769d9cf7bc6f626308
+#   CMAKE_ARGS
+#     -DCMAKE_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+#     -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
+#     -DCMAKE_BUILD_TYPE=Release
+#     -DGTSAM_BUILD_PYTHON=1
+# )
 
 # Third party libraries
 find_package(Boost REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(GTSAM REQUIRED)
 find_package(TBB REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
@@ -148,22 +149,16 @@ ament_target_dependencies(libsurvive_ros2_driver_node rclcpp)
 # Component
 add_library(libsurvive_ros2_poser_component SHARED
   src/poser_component.cpp)
-add_dependencies(libsurvive_ros2_poser_component
-  gtsam)
 target_include_directories(libsurvive_ros2_poser_component PUBLIC
-  ${CMAKE_INSTALL_PREFIX}/include
+  ${GTSAM_INCLUDE_DIR}
   ${YAML_CPP_INCLUDE_DIRS}
   ${Boost_INCLUDE_DIRS}
   ${TBB_INCLUDE_DIRS})
-target_link_directories(libsurvive_ros2_poser_component PUBLIC
-  ${CMAKE_INSTALL_PREFIX}/lib)
 target_link_libraries(libsurvive_ros2_poser_component
-  ${YAML_CPP_LIBRARIES}
-  ${Boost_LIBRARIES}
-  ${TBB_LIBRARIES}
-  "${cpp_typesupport_target}"
+  gtsam
   Eigen3::Eigen
-  -lgtsam)
+  ${YAML_CPP_LIBRARIES}
+  "${cpp_typesupport_target}")
 target_compile_definitions(libsurvive_ros2_poser_component
   PRIVATE "COMPOSITION_BUILDING_DLL")
 target_compile_options(libsurvive_ros2_poser_component
@@ -190,12 +185,12 @@ ament_target_dependencies(libsurvive_ros2_poser_node rclcpp)
 
 # Install python packages
 
-externalproject_get_property(gtsam binary_dir)
-install(
-  DIRECTORY
-    ${binary_dir}/python/gtsam
-  DESTINATION
-    ${PYTHON_INSTALL_DIR})
+# externalproject_get_property(gtsam binary_dir)
+# install(
+#   DIRECTORY
+#     ${binary_dir}/python/gtsam
+#   DESTINATION
+#     ${PYTHON_INSTALL_DIR})
 
 # Install the components
 

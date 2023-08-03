@@ -74,6 +74,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 #include "tf2_ros/transform_broadcaster.h"
+#include "tf2_ros/static_transform_broadcaster.h"
 
 namespace libsurvive_ros2
 {
@@ -202,6 +203,7 @@ private:
 
   // TF2 publisher
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+  std::unique_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
 
   // Solution timer
   rclcpp::TimerBase::SharedPtr timer_;

@@ -25,11 +25,10 @@ from ament_index_python.packages import get_package_share_directory
 import launch
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, GroupAction
-from launch_ros.actions import LoadComposableNodes
-from launch_ros.descriptions import ComposableNode
 from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration, PythonExpression
-from launch_ros.actions import Node, ComposableNodeContainer
+from launch_ros.actions import LoadComposableNodes, Node, ComposableNodeContainer
+from launch_ros.descriptions import ComposableNode
 
 # Bas directories for resource loading and writing.
 LOG_DIR = launch.logging.launch_config.log_dir
@@ -67,6 +66,11 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             "replay", default_value="", description="Replay data from this bag path"
+        ),    
+        DeclareLaunchArgument(
+            "debug",
+            default_value="true",
+            description="Launch in a debugger xterm window",
         ),
         # Driver configuration
         DeclareLaunchArgument(
@@ -125,6 +129,12 @@ def generate_launch_description():
         {"tracking_frame": LaunchConfiguration("tracking_frame")},
     ]
 
+    # If have a meta poser config file specified, disable the low-level poser.
+    launch_prefix = PythonExpression(
+        ["'xterm -e gdb -ex=r --args' if bool('", LaunchConfiguration("debug"), "') else None"]
+    )
+
+
     # Composed pipeline.
     composed_pipeline = GroupAction(
         actions=[
@@ -133,6 +143,7 @@ def generate_launch_description():
                 executable="component_container",
                 name="libsurvive_ros2_container",
                 namespace=LaunchConfiguration("namespace"),
+                prefix=launch_prefix,
                 output="screen",
             ),
             LoadComposableNodes(
@@ -176,6 +187,7 @@ def generate_launch_description():
                 name="libsurvive_ros2_driver_node",
                 namespace=LaunchConfiguration("namespace"),
                 condition=IfCondition(enable_driver),
+                prefix=launch_prefix,
                 output="screen",
                 parameters=driver_parameters,
             ),
@@ -185,6 +197,7 @@ def generate_launch_description():
                 name="libsurvive_ros2_poser_node",
                 namespace=LaunchConfiguration("namespace"),
                 condition=IfCondition(enable_poser),
+                prefix=launch_prefix,
                 output="screen",
                 parameters=poser_parameters,
             ),
@@ -223,6 +236,7 @@ def generate_launch_description():
                 "/roslog:=/old/roslog",
                 "/tf:=/old/tf",
                 "/tf_static:=/old/tf_static",
+                "/libsurvive/pose/body:=/old/pose/body",
                 "/libsurvive/pose/tracker:=/old/pose/tracker",
                 "/libsurvive/pose/lighthouse:=/old/pose/lighthouse",
             ],

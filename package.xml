@@ -13,17 +13,16 @@
   <!-- Dependencies required at build, execute or test times -->
 
   <depend>boost</depend>
+  <depend>diagnostic_msgs</depend>
   <depend>eigen</depend>
-  <depend>tbb</depend>
-
+  <depend>geometry_msgs</depend>
+  <depend>gtsam</depend>
   <depend>rclcpp_components</depend>
   <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>tbb</depend>
   <depend>tf2_ros</depend>
   <depend>tf2</depend>
-
-  <depend>diagnostic_msgs</depend>
-  <depend>geometry_msgs</depend>
-  <depend>sensor_msgs</depend>
 
   <!-- Build-time dependencies -->
 
@@ -32,12 +31,12 @@
   
   <!-- Run-time dependencies -->
   
-  <exec_depend>rosidl_default_runtime</exec_depend>
   <exec_depend>foxglove_bridge</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-scipy</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>rosbag2_storage_mcap</exec_depend>
+  <exec_depend>rosidl_default_runtime</exec_depend>
 
   <!-- Test-time dependencies -->
   

@@ -29,10 +29,14 @@ services:
     privileged: false
     device_cgroup_rules:
       - 'c *:* rmw'
+    environment:
+      DISPLAY: $DISPLAY
     volumes:
-      - /dev:/dev
       - .:/home/ubuntu/ros2_ws/src/libsurvive_ros2
       - ./data:/home/ubuntu/.ros
+      - /dev:/dev
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ~/.Xauthority:/home/ubuntu/.Xauthority
     build: .
     network_mode: host
     working_dir: /home/ubuntu/ros2_ws
