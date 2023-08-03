@@ -198,20 +198,25 @@ def generate_launch_description():
     )
 
     # For recording all data from the experiment
-    bag_record_node = ExecuteProcess(
-        cmd=["ros2", "bag", "record", "-o", BAG_FILE, "-a"],
+    bag_recorder_node = ExecuteProcess(
+        cmd=["ros2", "bag", "record", "-s", "mcap", "-o", BAG_FILE, "-a"],
         condition=IfCondition(LaunchConfiguration("record")),
         output="log",
     )
 
     # For recording all data from the experiment
-    bag_record_node = ExecuteProcess(
+    bag_player_node = ExecuteProcess(
         cmd=["ros2", "bag", "play", LaunchConfiguration("replay")],
         condition=UnlessCondition(enable_driver),
         output="log",
     )
 
     return LaunchDescription(
-        arguments
-        + [composed_pipeline, non_composed_pipeline, web_bridge_node, bag_record_node]
+        arguments + [
+            composed_pipeline,
+            non_composed_pipeline,
+            web_bridge_node,
+            bag_recorder_node,
+            bag_player_node
+        ]
     )

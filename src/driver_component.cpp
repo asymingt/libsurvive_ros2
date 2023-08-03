@@ -339,26 +339,37 @@ DriverComponent::DriverComponent(const rclcpp::NodeOptions & options)
   timer_ = this->create_wall_timer(1s, std::bind(&DriverComponent::timer_callback, this));
 
   // Setup driver parameters.
-  std::string driver_args;
-  std::vector<const char *> args;
-  std::stringstream driver_ss(driver_args);
-  std::string token;
+  std::vector<std::string> args;
   args.emplace_back(this->get_name());
   args.emplace_back("--init-configfile");
-  args.emplace_back(driver_config_in_.c_str());
+  args.emplace_back(driver_config_in);
   args.emplace_back("--configfile");
-  args.emplace_back(driver_config_out_.c_str());
+  args.emplace_back(driver_config_out_);
   if (recalibrate_) {
     args.emplace_back("--force-calibrate");
+    args.emplace_back("1");
   } else {
-    args.emplace_back("--disable-calibrate");
+    args.emplace_back("--force-calibrate");
+    args.emplace_back("0");
   }
+  std::stringstream driver_ss(driver_args_);
+  std::string token;
   while (getline(driver_ss, token, ' ')) {
-    args.emplace_back(token.c_str());
+    args.emplace_back(token);
   }
 
-  // Try and initialize survive with the arguments supplied.
-  ctx_ = survive_init(args.size(), const_cast<char **>(args.data()));
+  // Do an argument conversion, initialize, survive and clean up memory immediately.
+  int argc = args.size();
+  char **argv = new (char*)[args.size()];
+  for (int i = 0; i < argc; i++) {
+    argv[i] = new char[args[i].length()];
+    std::strcpy(argv[i], args[i].c_str());
+  }
+  ctx_ = survive_init(argc, argv);
+  for (int i = 0; i < argc; i++) {
+    delete argv[i];
+  }
+  delete[] argv;
   if (ctx_ == nullptr) {
     RCLCPP_FATAL(this->get_logger(), "Could not initialize the libsurvive context");
     return;
