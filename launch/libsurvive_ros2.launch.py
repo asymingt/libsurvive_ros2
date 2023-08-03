@@ -63,10 +63,10 @@ def generate_launch_description():
             "composable", default_value="false", description="Record data with rosbag"
         ),
         DeclareLaunchArgument(
-            "record", default_value="false", description="Record data with rosbag"
+            "record", default_value=BAG_FILE, description="Record data to this bag path"
         ),
         DeclareLaunchArgument(
-            "replay", default_value="", description="Record data with rosbag"
+            "replay", default_value="", description="Replay data from this bag path"
         ),
         # Driver configuration
         DeclareLaunchArgument(
@@ -92,19 +92,29 @@ def generate_launch_description():
         ),
     ]
 
-    # If we are replaying, then we should not run the driver
+    # If we have specified a valid record location, then enable recording
+    enable_record = PythonExpression(
+        ["bool('", LaunchConfiguration("record"), "')"]
+    )
+
+    # If we are replaying, then we should not run the low-level driver
     enable_driver = PythonExpression(
         ["not bool('", LaunchConfiguration("replay"), "')"]
     )
 
-    # If we are using a poser, then we should launch it in a composable context.
+    # If have a meta poser config file, then we need to enable the poser
     enable_poser = PythonExpression(
         ["bool('", LaunchConfiguration("meta_config"), "')"]
     )
 
+    # If have a meta poser config file specified, disable the low-level poser.
+    driver_args = PythonExpression(
+        ["'-p Null' if bool('", LaunchConfiguration("meta_config"), "') else '-p MPFIT'"]
+    )
+
     # Sow we don't have to repeat for composable and non-composable versions.
     driver_parameters = [
-        {"driver_args": "--v 100 --lighthouse-gen 2"},
+        {"driver_args": driver_args},
         {"driver_config_in": LaunchConfiguration("driver_config_in")},
         {"driver_config_out": LaunchConfiguration("driver_config_out")},
         {"recalibrate": LaunchConfiguration("recalibrate")},
@@ -197,16 +207,25 @@ def generate_launch_description():
         output="log",
     )
 
-    # For recording all data from the experiment
+    # For recording all data from the experiment. We'll use the MCAP format by
+    # default in order to keep consistency across ROS2 releases.
     bag_recorder_node = ExecuteProcess(
-        cmd=["ros2", "bag", "record", "-s", "mcap", "-o", BAG_FILE, "-a"],
-        condition=IfCondition(LaunchConfiguration("record")),
+        cmd=["ros2", "bag", "record", "-s", "mcap", "-o", LaunchConfiguration("record"), "-a"],
+        condition=IfCondition(enable_record),
         output="log",
     )
 
-    # For recording all data from the experiment
+    # In replay we're going to take the raw data and recalculate the poses and TF2
+    # transforms. To avoid interference with the old estimates, we're going to map
+    # the replayed values to the /old prefix.
     bag_player_node = ExecuteProcess(
-        cmd=["ros2", "bag", "play", LaunchConfiguration("replay")],
+        cmd=["ros2", "bag", "play", "-s", "mcap", LaunchConfiguration("replay"), "--remap",
+                "/roslog:=/old/roslog",
+                "/tf:=/old/tf",
+                "/tf_static:=/old/tf_static",
+                "/libsurvive/pose/tracker:=/old/pose/tracker",
+                "/libsurvive/pose/lighthouse:=/old/pose/lighthouse",
+            ],
         condition=UnlessCondition(enable_driver),
         output="log",
     )

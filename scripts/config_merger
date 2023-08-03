@@ -21,7 +21,6 @@
 # THE SOFTWARE.
 
 import argparse
-import sys
 
 from libsurvive_ros2_py.config_tools import config_merge
 

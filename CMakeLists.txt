@@ -39,6 +39,12 @@ endif()
 # Set compile options
 add_compile_options(-Wall -Wextra -Wpedantic)
 
+# Cached compilation
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+    set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "${CCACHE_PROGRAM}")
+endif()
+
 # DEPENDENCIES
 
 # Obtain a specific version of the libsurvive low-level driver.
@@ -104,7 +110,8 @@ rosidl_get_typesupport_target(cpp_typesupport_target
 
 # Component
 add_library(libsurvive_ros2_driver_component SHARED
-  src/driver_component.cpp)
+  src/driver_component.cpp
+  src/driver_poser_null.cpp)
 add_dependencies(libsurvive_ros2_driver_component
   libsurvive)
 target_include_directories(libsurvive_ros2_driver_component PUBLIC
@@ -212,6 +219,7 @@ install(
 
 install(
   PROGRAMS
+    scripts/bag_parser
     scripts/config_merger
   DESTINATION
     lib/${PROJECT_NAME})

@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+#
+# Copyright 2023 Andrew Symington
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+
+import argparse
+
+import rosbag2_py
+from rclpy.serialization import deserialize_message
+from rclpy.time import Time 
+from rosidl_runtime_py.utilities import get_message
+
+def get_rosbag_options(path, storage_id, serialization_format='cdr'):
+    """Get the storage and converter options for a fiven rosbag"""
+    storage_options = rosbag2_py.StorageOptions(
+        uri=path, storage_id=storage_id)
+    converter_options = rosbag2_py.ConverterOptions(
+        input_serialization_format=serialization_format,
+        output_serialization_format=serialization_format)
+    return storage_options, converter_options
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-b", "--bag", type=str, required=True, help="the bag file to input")
+    parser.add_argument("-n", "--namespace", default='/libsurvive', help="the bag file to output")
+    args = parser.parse_args()
+
+    storage_options, converter_options = get_rosbag_options(args.bag, 'mcap')
+    reader = rosbag2_py.SequentialReader()
+    reader.open(storage_options, converter_options)
+
+    type_map = {}
+    for topic_metadata in reader.get_all_topics_and_types():
+        type_map[topic_metadata.name] = topic_metadata.type
+
+    lighthouses = dict()
+    trackers = dict()
+    while reader.has_next():
+        (topic, data, time_stamp) = reader.read_next()
+        if topic == f"{args.namespace}/lighthouse":
+            msg = deserialize_message(data, get_message(type_map[topic]))
+            lighthouses[msg.channel] = msg.header.frame_id
+        if topic == f"{args.namespace}/tracker":
+            msg = deserialize_message(data, get_message(type_map[topic]))
+            if msg.header.frame_id not in trackers.keys():
+                trackers[msg.header.frame_id] = dict()
+        if topic == f"{args.namespace}/angle":
+            msg = deserialize_message(data, get_message(type_map[topic]))
+            if msg.header.frame_id not in trackers.keys():
+                trackers[msg.header.frame_id] = dict()
+            if msg.channel not in trackers[msg.header.frame_id].keys():
+                trackers[msg.header.frame_id][msg.channel] = 0
+            trackers[msg.header.frame_id][msg.channel] += 1
+    print("Lighthouses:")
+    for channel in sorted(lighthouses.keys()):
+        print(f"- [CH{channel}] {lighthouses[channel]}")
+    print("Trackers:")
+    for tracker, angles in trackers.items():
+        print(f"- {tracker}", angles)
+    del reader

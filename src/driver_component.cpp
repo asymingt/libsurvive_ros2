@@ -326,11 +326,11 @@ DriverComponent::DriverComponent(const rclcpp::NodeOptions & options)
     this->create_publisher<libsurvive_ros2::msg::Tracker>("tracker", qos_profile);
   tracker_pose_publisher_ =
     this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
-    "pose/tracker",
+    "/pose/tracker",
     qos_profile);
   lighthouse_pose_publisher_ =
     this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
-    "pose/lighthouse",
+    "/pose/lighthouse",
     qos_profile);
 
   // Callback timer for republishing lighthouse and tracker information. We do this
@@ -341,8 +341,12 @@ DriverComponent::DriverComponent(const rclcpp::NodeOptions & options)
   // Setup driver parameters.
   std::vector<std::string> args;
   args.emplace_back(this->get_name());
+  args.emplace_back("--v");
+  args.emplace_back("100");
+  args.emplace_back("--lighthouse-gen");
+  args.emplace_back("2");
   args.emplace_back("--init-configfile");
-  args.emplace_back(driver_config_in);
+  args.emplace_back(driver_config_in_);
   args.emplace_back("--configfile");
   args.emplace_back(driver_config_out_);
   if (recalibrate_) {
@@ -360,7 +364,7 @@ DriverComponent::DriverComponent(const rclcpp::NodeOptions & options)
 
   // Do an argument conversion, initialize, survive and clean up memory immediately.
   int argc = args.size();
-  char **argv = new (char*)[args.size()];
+  char **argv = new char*[args.size()];
   for (int i = 0; i < argc; i++) {
     argv[i] = new char[args[i].length()];
     std::strcpy(argv[i], args[i].c_str());

@@ -27,7 +27,6 @@ version: '3.6'
 services:
   libsurvive_ros2:
     privileged: false
-    network_mode: bridge
     device_cgroup_rules:
       - 'c *:* rmw'
     volumes:
@@ -35,8 +34,7 @@ services:
       - .:/home/ubuntu/ros2_ws/src/libsurvive_ros2
       - ./data:/home/ubuntu/.ros
     build: .
-    ports:
-      - "8765:8765"
+    network_mode: host
     working_dir: /home/ubuntu/ros2_ws
     entrypoint: /home/ubuntu/ros2_ws/entrypoint.sh
     command: ros2 launch libsurvive_ros2 libsurvive_ros2.launch.py

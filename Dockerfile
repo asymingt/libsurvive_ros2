@@ -30,6 +30,7 @@ SHELL ["/bin/bash", "-c"]
 # Install baseline tools
 RUN apt-get update && apt-get install -y --no-install-recommends                \
         build-essential                                                         \
+        ccache                                                                  \
         cmake                                                                   \
         freeglut3-dev                                                           \
         gdb                                                                     \
@@ -76,5 +77,4 @@ source /home/ubuntu/ros2_ws/install/setup.bash \n\
 exec \$@" > /home/ubuntu/ros2_ws/entrypoint.sh
 RUN chmod 755 /home/ubuntu/ros2_ws/entrypoint.sh
 WORKDIR /home/ubuntu/ros2_ws
-ENTRYPOINT [ "/home/ubuntu/ros2_ws/entrypoint.sh" ]
 
