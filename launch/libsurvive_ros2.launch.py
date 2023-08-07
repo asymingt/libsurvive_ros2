@@ -69,7 +69,7 @@ def generate_launch_description():
         ),    
         DeclareLaunchArgument(
             "debug",
-            default_value="true",
+            default_value="false",
             description="Launch in a debugger xterm window",
         ),
         # Driver configuration
@@ -131,7 +131,7 @@ def generate_launch_description():
 
     # If have a meta poser config file specified, disable the low-level poser.
     launch_prefix = PythonExpression(
-        ["'xterm -e gdb -ex=r --args' if bool('", LaunchConfiguration("debug"), "') else None"]
+        ["'xterm -e gdb -ex=r --args' if '", LaunchConfiguration("debug"), "'=='true' else ''"]
     )
 
 

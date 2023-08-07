@@ -27,6 +27,8 @@
 //   i : the tracker "imu" frame (the IMU origin)
 //   b : the origin of a rigid body to which a tracker is attached
 
+#include <cmath>
+
 #include "libsurvive_ros2/poser_component.hpp"
 #include "rclcpp_components/register_node_macro.hpp"
 
@@ -46,6 +48,8 @@ const double kAccelDriftSigma = 0.1;
 const double kOmegaSigma = 0.1;
 const double kOmegaDriftSigma = 0.1;
 const double kIntegrationSigma = 0.1;
+const double kSensorPositionSigma = 0.0001;
+const double kSigmaAngle = 0.001;
 
 // Time between bias states
 const Timestamp kImuBiasTimeNs = 1e9;
@@ -168,18 +172,51 @@ PoserComponent::PoserComponent(const rclcpp::NodeOptions & options)
   this->declare_parameter("tracking_frame", "libsurvive_frame");
   this->get_parameter("tracking_frame", tracking_frame_);
 
-  // Example: poser.yaml
+  // Example: example_config_poser.yaml
   // -------------------
   // rigid_bodies:
-  //   - body_id: "rigid_body/wand"
+  //   - body_id: "world_frame"
   //     trackers:
   //       - tracker_id: LHR-74EFB987
-  //         bTh: [0.0,  0.15, 0.0, 1.0, 0.0, 0.0, 0.0]
+  //         bTh: [0.0,  0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+  //   - body_id: "body_frame"
+  //     trackers:
   //       - tracker_id: LHR-933F150A
-  //         bTh: [0.0, -0.15, 0.0, 1.0, 0.0, 0.0, 0.0]
+  //         bTh: [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+  // registration:
+  //   - body_id: "world_frame"
+  //     gTb: [0.0, 0.0, 10.0, 1.0, 0.0, 0.0, 0.0]
   YAML::Node config = YAML::LoadFile(meta_config);
   for (auto body : config["rigid_bodies"]) {
     std::string body_id = body["body_id"].as<std::string>();
+
+    // If this is a static body, we need to only assign it a single state
+    // the global frame, and set a prior on that state
+    id_to_body_info_[body_id].is_static = body["static"].as<bool>();
+    if (id_to_body_info_[body_id].is_static) {
+      
+      // Velocity is always zero.
+      id_to_body_info_[body_id].g_V[0] = next_available_key_++;
+      auto g_V_obs = gtsam::Vector3(0.0, 0.0, 0.0);
+      auto g_V_cov = gtsam::noiseModel::Diagonal::Sigmas(
+          gtsam::Vector3(1e-9, 1e-9, 1e-9));
+      graph_.add(gtsam::PriorFactor<gtsam::Vector3>(
+          id_to_body_info_[body_id].g_V[0], g_V_obs, g_V_cov));
+      initial_values_.insert(id_to_body_info_[body_id].g_V[0], g_V_obs);
+
+      // Pose is unknown, but it start it off somewhere reasonable.
+      id_to_body_info_[body_id].gTb[0] = next_available_key_++;
+      auto gTb_obs = gtsam::Pose3(
+        gtsam::Rot3::Quaternion(1.0, 0.0, 0.0, 0.0),
+        gtsam::Point3(0.0, 0.0, 0.0));
+      auto gTb_cov = gtsam::noiseModel::Diagonal::Sigmas(
+          gtsam::Vector6(10.0, 10.0, 10.0, 100.0, 100.0, 100.0));
+      graph_.add(gtsam::PriorFactor<gtsam::Pose3>(
+          id_to_body_info_[body_id].gTb[0], gTb_obs, gTb_cov));
+      initial_values_.insert(id_to_body_info_[body_id].gTb[0], gTb_obs);
+    }
+    
+    // Add tracker information
     for (auto tracker : body["trackers"]) {
       std::string tracker_id = tracker["tracker_id"].as<std::string>();
       std::vector<double> bTh = tracker["bTh"].as<std::vector<double>>();
@@ -187,6 +224,21 @@ PoserComponent::PoserComponent(const rclcpp::NodeOptions & options)
         gtsam::Rot3::Quaternion(bTh[3], bTh[4], bTh[5], bTh[6]),
         gtsam::Point3(bTh[0], bTh[1], bTh[2]));
     }
+  }
+
+  // Add registration information
+  for (auto registration : config["registration"]) {
+    std::string body_id = registration["body_id"].as<std::string>();
+    if (id_to_body_info_.count(body_id) == 0) {
+      RCLCPP_WARN_STREAM(this->get_logger(),
+        "Unknown body frame '" << body_id << "' specified in registration");
+      continue;
+    }
+    std::vector<double> gTb = registration["gTb"].as<std::vector<double>>();
+    auto gTb_obs = gtsam::Pose3(
+      gtsam::Rot3::Quaternion(gTb[3], gTb[4], gTb[5], gTb[6]),
+      gtsam::Point3(gTb[0], gTb[1], gTb[2]));
+    initial_values_.update(id_to_body_info_[body_id].gTb[0], gTb_obs);
   }
 
   // TODO(asymingt) this might not play very well with composable node inter-process
@@ -203,16 +255,14 @@ PoserComponent::PoserComponent(const rclcpp::NodeOptions & options)
     "imu", qos_profile, std::bind(&PoserComponent::add_imu, this, _1));
   angle_subscriber_ = this->create_subscription<libsurvive_ros2::msg::Angle>(
     "angle", qos_profile, std::bind(&PoserComponent::add_angle, this, _1));
-  tracker_pose_subscriber_ =
-    this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
-    "pose/tracker", qos_profile, std::bind(&PoserComponent::add_tracker_pose, this, _1));
-  lighthouse_pose_subscriber_ =
-    this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
-    "pose/lighthouse", qos_profile, std::bind(&PoserComponent::add_lighthouse_pose, this, _1));
 
   // Setup refined body frame pose publisher
   body_pose_publisher_ =
     this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("pose/body", qos_profile);
+  tracker_pose_publisher_ =
+    this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("pose/tracker", qos_profile);
+  lighthouse_pose_publisher_ =
+    this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("pose/lighthouse", qos_profile);
 
   // Add a timer to extract solution and publish pose
   timer_ = this->create_wall_timer(
@@ -226,31 +276,65 @@ PoserComponent::~PoserComponent()
 
 void PoserComponent::add_angle(const libsurvive_ros2::msg::Angle & msg)
 {
-  /* TODO fix this -- might need a CustomFactor?
-
   // Only accept angle measurements from trackers already inserted into the graph.
   const std::string & tracker_id = msg.header.frame_id;
   if (id_to_tracker_info_.count(tracker_id) == 0) {
     return;
   }
-  const Timestamp stamp = rclcpp::Time(msg.header.stamp).nanoseconds();
   auto & tracker_info = id_to_tracker_info_[tracker_id];
   auto & body_info = id_to_body_info_[tracker_info.body_id];
 
-  // Find the closest time lower than the given stamp in the trajectory.
-  auto gTb_iter = body_info.gTb.lower_bound(stamp);
-  if (gTb == body_info.gTb.end()) {
-    RCLCPP_WARN_STREAM(this->get_logger(), "No matching timestamp found");
+  // Only accept angle measurements from channels we have already seen
+  if (channel_to_lighthouse_info_.count(msg.channel) == 0) {
+    return;
+  }
+  auto & lighthouse_info = channel_to_lighthouse_info_[msg.channel];
+
+  // Verify that the tracker has this channel
+  if (tracker_info.t_sensors.count(msg.sensor_id) == 0) {
+    RCLCPP_ERROR_STREAM(this->get_logger(),
+      "Tracker " << tracker_id << " sensor " << msg.sensor_id << " does not exist");
+  }
+  auto & t_sensor = tracker_info.t_sensors[msg.sensor_id];
+
+  // We rely on IMU inserting the actual states. We're just going to find the
+  // closest one to the angle timestamp and use it. There should be one...
+  const Timestamp stamp = rclcpp::Time(msg.header.stamp).nanoseconds();
+  auto gTb = find_key_for_closest_stamp(body_info.gTb, stamp);
+  if (!gTb) {
     return;
   }
 
-  // Add a factor constraining the adjacent poses and velocities
-  graph_.add(gtsam::BearingFactor<Pose3, Point3>(
-    body_info.gTb[tracker_info.last_imu_stamp],          // last pose
-    body_info.g_V[tracker_info.last_imu_stamp],          // last velocity
-    tracker_info.preintegrator));                        // preintegrator
+  // Expression to move the the position of the sensor from the tracking to global frame.
+  gtsam::Point3_ t_sensor_(t_sensor);
+  gtsam::Pose3_ gTb_(*gTb);
+  gtsam::Pose3_ bTh_(body_info.bTh[tracker_id]);
+  gtsam::Pose3_ hTt_(tracker_info.tTh.inverse());
+  gtsam::Point3_ g_sensor_ =
+    gtsam::transformFrom(gtsam::compose(gTb_, gtsam::compose(bTh_, hTt_)), t_sensor_);
 
-  */
+  // Now we can use a simple pinhole model to predict the (u, v, 1) coordinate of the
+  // sensor on some virtual image plane located at 1m from the sensor. This is because
+  // the "K" has fx = 1.0, and fy = 1.0, and all other elements zero.
+  gtsam::Pose3_ gTl_(lighthouse_info.gTl);
+  gtsam::Cal3_S2_ K_(*lighthouse_info.K);
+  auto expression_factor = gtsam::project3(gTl_, g_sensor_, K_);
+
+  // The factor that gets added depends if this is an angle about axis 0 or axis 1.
+  switch (msg.plane) {
+  case 0: {  // Angle about X
+    auto angle_obs = gtsam::Point2(std::atan(msg.angle), 0);
+    auto angle_cov = gtsam::noiseModel::Diagonal::Sigmas(gtsam::Vector2(kSigmaAngle, 1e6));
+    graph_.addExpressionFactor(expression_factor, angle_obs, angle_cov);    
+    break;
+    }
+  case 1: {  // Angle about Y
+    auto angle_obs = gtsam::Point2(0, std::atan(msg.angle));
+    auto angle_cov = gtsam::noiseModel::Diagonal::Sigmas(gtsam::Vector2(1e6, kSigmaAngle));
+    graph_.addExpressionFactor(expression_factor, angle_obs, angle_cov);
+    break;
+    }
+  }
 }
 
 void PoserComponent::add_imu(const sensor_msgs::msg::Imu & msg)
@@ -260,9 +344,17 @@ void PoserComponent::add_imu(const sensor_msgs::msg::Imu & msg)
   if (!id_to_tracker_info_.count(tracker_id)) {
     return;
   }
-  const Timestamp stamp_curr = gtsam_from_ros(msg.header.stamp);
   auto & tracker_info = id_to_tracker_info_[tracker_id];
   auto & body_info = id_to_body_info_[tracker_info.body_id];
+
+  // There is no point in adding IMU information about a static object, because all we'd
+  // be doing is spending a lot of compute on tracking the IMU random walks. Perhaps at
+  // some point in the future we might want to work out the gravitation vector and use
+  // it to somehow adjust the pose, but that seems a little far-fetched.
+  if (body_info.is_static) {
+    return;
+  }
+  const Timestamp stamp_curr = gtsam_from_ros(msg.header.stamp);
 
   // Extract the linear acceleration and correct for constant bias / scale errors.
   gtsam::Vector i_accel(3);
@@ -421,9 +513,8 @@ void PoserComponent::add_tracker(const libsurvive_ros2::msg::Tracker & msg)
 
   // Sensor locations and normals.
   for (size_t k = 0; k < msg.channels.size(); k++) {
-    uint8_t channel = msg.channels[k];
-    tracker_info.t_sensors[channel] = std::make_pair(
-      gtsam_from_ros(msg.points[k]), gtsam_from_ros(msg.normals[k]));
+    const uint8_t channel = msg.channels[k];
+    tracker_info.t_sensors[channel] = gtsam_from_ros(msg.points[k]);
   }
 
   // The IMU factor needs to know the pose of the IMU sensor in the body frame in
@@ -446,15 +537,30 @@ void PoserComponent::add_tracker(const libsurvive_ros2::msg::Tracker & msg)
 
 void PoserComponent::add_lighthouse(const libsurvive_ros2::msg::Lighthouse & msg)
 {
+  const Channel lighthouse_channel = msg.channel;
   const std::string & lighthouse_id = msg.header.frame_id;
-  if (id_to_lighthouse_info_.count(lighthouse_id)) {
+  if (channel_to_lighthouse_info_.count(lighthouse_channel)) {
+    const std::string & orig_lighthouse_id = channel_to_lighthouse_info_[lighthouse_channel].id;
+    if (orig_lighthouse_id != lighthouse_id) {
+      RCLCPP_ERROR_STREAM(this->get_logger(), 
+        "New lighthouse " << lighthouse_id << " on channel " << lighthouse_channel
+          << " previously received from " << orig_lighthouse_id);
+    }
     return;
   }
-  RCLCPP_INFO_STREAM(this->get_logger(), "Adding lighthouse " << lighthouse_id);
+  RCLCPP_INFO_STREAM(this->get_logger(), 
+    "Adding lighthouse " << lighthouse_id << " on channel " << lighthouse_channel);
+  auto & lighthouse_info = channel_to_lighthouse_info_[lighthouse_channel];
 
-  auto & lighthouse_info = id_to_lighthouse_info_[lighthouse_id];
+  // Se the ID immediately.
+  lighthouse_info.id = lighthouse_id;
 
-  // This is out initial prior on bae station location given no observations.
+  // The camera projection matrix for this lighthouse is super easy. We want the focal length in
+  // X and Y to be 1. This is so that a point [x,y,z] when projected on the image plane lies along
+  // unit 1 in z. So we can go atan(angle_about_y) == u, or atan(angle_about_x) == v.
+  lighthouse_info.K.reset(new gtsam::Cal3_S2(1.0, 1.0, 0.0, 0.0, 0.0));
+
+  // This is out initial prior on the lighthouse location given no observations.
   auto obs_gTl = gtsam::Pose3(
     gtsam::Rot3::Quaternion(1.0, 0.0, 0.0, 0.0),
     gtsam::Point3(0.0, 0.0, 0.0));
@@ -471,47 +577,47 @@ void PoserComponent::add_lighthouse(const libsurvive_ros2::msg::Lighthouse & msg
   graph_.add(gtsam::PriorFactor<gtsam::Pose3>(lighthouse_info.gTl, obs_gTl, cov_gTl));
 }
 
-void PoserComponent::add_tracker_pose(const geometry_msgs::msg::PoseWithCovarianceStamped & msg)
-{
-  const std::string & tracker_id = msg.header.frame_id;
-  if (!id_to_tracker_info_.count(tracker_id)) {
-    return;
-  }
-  const Timestamp stamp = gtsam_from_ros(msg.header.stamp);
-  auto & tracker_info = this->id_to_tracker_info_[tracker_id];
-  auto & body_info = this->id_to_body_info_[tracker_info.body_id];
+// void PoserComponent::add_tracker_pose(const geometry_msgs::msg::PoseWithCovarianceStamped & msg)
+// {
+//   const std::string & tracker_id = msg.header.frame_id;
+//   if (!id_to_tracker_info_.count(tracker_id)) {
+//     return;
+//   }
+//   const Timestamp stamp = gtsam_from_ros(msg.header.stamp);
+//   auto & tracker_info = this->id_to_tracker_info_[tracker_id];
+//   auto & body_info = this->id_to_body_info_[tracker_info.body_id];
 
-  // We can't add an observation for a state that does not exist.
-  auto gTb = find_key_for_closest_stamp(body_info.gTb, stamp);
-  if (!gTb) {
-    return;
-  }
+//   // We can't add an observation for a state that does not exist.
+//   auto gTb = find_key_for_closest_stamp(body_info.gTb, stamp);
+//   if (!gTb) {
+//     return;
+//   }
 
-  // Add a prior factor on the pose state
-  auto gTt_obs = gtsam_from_ros(msg.pose.pose);
-  auto hTb = body_info.bTh[tracker_id].inverse();
-  auto tTb = tracker_info.tTh * hTb;
-  auto gTb_obs = gTt_obs * tTb;
-  auto gTt_cov = gtsam_from_ros(msg.pose.covariance);
-  auto gTb_cov = gTt_cov;
-  graph_.add(gtsam::PriorFactor<gtsam::Pose3>(*gTb, gTb_obs, gTb_cov));
-}
+//   // Add a prior factor on the pose state
+//   auto gTt_obs = gtsam_from_ros(msg.pose.pose);
+//   auto hTb = body_info.bTh[tracker_id].inverse();
+//   auto tTb = tracker_info.tTh * hTb;
+//   auto gTb_obs = gTt_obs * tTb;
+//   auto gTt_cov = gtsam_from_ros(msg.pose.covariance);
+//   auto gTb_cov = gTt_cov;
+//   graph_.add(gtsam::PriorFactor<gtsam::Pose3>(*gTb, gTb_obs, gTb_cov));
+// }
 
-void PoserComponent::add_lighthouse_pose(const geometry_msgs::msg::PoseWithCovarianceStamped & msg)
-{
-  const std::string & lighthouse_id = msg.header.frame_id;
-  if (!id_to_lighthouse_info_.count(lighthouse_id)) {
-    return;
-  }
-  auto & lighthouse_info = this->id_to_lighthouse_info_[lighthouse_id];
+// void PoserComponent::add_lighthouse_pose(const geometry_msgs::msg::PoseWithCovarianceStamped & msg)
+// {
+//   const std::string & lighthouse_id = msg.header.frame_id;
+//   if (!id_to_lighthouse_info_.count(lighthouse_id)) {
+//     return;
+//   }
+//   auto & lighthouse_info = this->id_to_lighthouse_info_[lighthouse_id];
 
-  // Collect observation
-  auto obs_gTl = gtsam_from_ros(msg.pose.pose);
-  auto cov_gTl = gtsam_from_ros(msg.pose.covariance);
+//   // Collect observation
+//   auto obs_gTl = gtsam_from_ros(msg.pose.pose);
+//   auto cov_gTl = gtsam_from_ros(msg.pose.covariance);
 
-  // Add the observation
-  graph_.add(gtsam::PriorFactor<gtsam::Pose3>(lighthouse_info.gTl, obs_gTl, cov_gTl));
-}
+//   // Add the observation
+//   graph_.add(gtsam::PriorFactor<gtsam::Pose3>(lighthouse_info.gTl, obs_gTl, cov_gTl));
+// }
 
 void PoserComponent::solution_callback()
 {
@@ -547,37 +653,40 @@ void PoserComponent::solution_callback()
       msg.pose.pose = ros_from_gtsam(gTb);
       msg.pose.covariance = ros_from_gtsam(cov);
       body_pose_publisher_->publish(msg);
-      // Package up a transform for the body
+      // Package up a transform for the body, which may be static.
       geometry_msgs::msg::TransformStamped transform_msg;
       transform_msg.header.stamp = msg.header.stamp;
       transform_msg.header.frame_id = tracking_frame_;
       transform_msg.child_frame_id = body_id;
       transform_msg.transform = ros_transform_from_gtsam(gTb);
-      tf_broadcaster_->sendTransform(transform_msg);
+      if (body_info.is_static) {
+        tf_static_broadcaster_->sendTransform(transform_msg);
+      } else {
+        tf_broadcaster_->sendTransform(transform_msg);
+      }
     }
   }
 
   // Print lighthouses
-  for (const auto & [lighthouse_id, lighthouse_info] : id_to_lighthouse_info_) {
+  for (const auto & [channel, lighthouse_info] : channel_to_lighthouse_info_) {
     // Extract the solution
     gtsam::Pose3 gTl = isam2_.calculateEstimate<gtsam::Pose3>(lighthouse_info.gTl);
     gtsam::Matrix cov = isam2_.marginalCovariance(lighthouse_info.gTl);
     // Create a message containing the transform
     geometry_msgs::msg::PoseWithCovarianceStamped msg;
     msg.header.stamp = now;
-    msg.header.frame_id = lighthouse_id;
+    msg.header.frame_id = lighthouse_info.id;
     msg.pose.pose = ros_from_gtsam(gTl);
     msg.pose.covariance = ros_from_gtsam(cov);
-    body_pose_publisher_->publish(msg);
+    lighthouse_pose_publisher_->publish(msg);
     // Package up a transform
     geometry_msgs::msg::TransformStamped transform_msg;
     transform_msg.header.stamp = msg.header.stamp;
     transform_msg.header.frame_id = tracking_frame_;
-    transform_msg.child_frame_id = lighthouse_id;
+    transform_msg.child_frame_id = lighthouse_info.id;
     transform_msg.transform = ros_transform_from_gtsam(gTl);
     tf_static_broadcaster_->sendTransform(transform_msg);
   }
-
 
   // Flush both the variables and factors, because they have been added
   graph_.resize(0);

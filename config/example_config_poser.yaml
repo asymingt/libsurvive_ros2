@@ -30,9 +30,14 @@
 # 30cm ruler "wand", with Y running along the ruler length.
 #
 rigid_bodies:
-  - body_id: "rigid_body/wand"
+  - body_id: "world_frame"
     trackers:
       - tracker_id: LHR-74EFB987
-        bTh: [0.0,  0.15, 0.0, 1.0, 0.0, 0.0, 0.0]
+        bTh: [0.0,  0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+  - body_id: "body_frame"
+    trackers:
       - tracker_id: LHR-933F150A
-        bTh: [0.0, -0.15, 0.0, 1.0, 0.0, 0.0, 0.0]
+        bTh: [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+registration:
+  - body_id: "world_frame"
+    gTb: [0.0, 0.0, 10.0, 1.0, 0.0, 0.0, 0.0]

@@ -61,13 +61,17 @@
 
 // Project includes
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
+#include "gtsam/geometry/Rot2.h"
 #include "gtsam/inference/Symbol.h"
 #include "gtsam/navigation/ImuBias.h"
 #include "gtsam/navigation/ImuFactor.h"
 #include "gtsam/nonlinear/ISAM2.h"
+#include "gtsam/nonlinear/ExpressionFactorGraph.h"
 #include "gtsam/nonlinear/NonlinearFactorGraph.h"
 #include "gtsam/nonlinear/PriorFactor.h"
+#include "gtsam/slam/expressions.h"
 #include "gtsam/slam/BetweenFactor.h"
+#include <gtsam/slam/ProjectionFactor.h>
 #include "libsurvive_ros2/msg/angle.hpp"
 #include "libsurvive_ros2/msg/lighthouse.hpp"
 #include "libsurvive_ros2/msg/tracker.hpp"
@@ -81,18 +85,26 @@ namespace libsurvive_ros2
 
 // Nanosecond timestamp w.r.t unix epoch
 typedef int64_t Timestamp;
+typedef uint8_t Channel;
+typedef uint8_t Sensor;
 
 // Encodes body information
 struct BodyInfo
 {
-  // Sequence of poses of the body in the global frame
+  // This is a list of all trackers attached to this body and their poses
+  // relative to the mounitng bolt frame.
+  std::unordered_map<std::string, gtsam::Pose3> bTh;
+
+  // If this is a static body. This is currently only used for registration
+  // markers. If this is the case then the std::map<...> data strcutures
+  // below include a single (key = 0) value representing the pose/velocity.
+  bool is_static;
+
+    // Sequence of poses of the body in the global frame
   std::map<Timestamp, gtsam::Key> gTb;
 
   // Sequence of velocities in the body frame.
   std::map<Timestamp, gtsam::Key> g_V;
-
-  // Tracker head to body transforms for all sensors
-  std::unordered_map<std::string, gtsam::Pose3> bTh;
 };
 
 // Encodes tracker information
@@ -107,8 +119,8 @@ struct TrackerInfo
   gtsam::Pose3 tTi;
   gtsam::Pose3 tTh;
 
-  // Sensor <locations, normals> in the tracking frame.
-  std::unordered_map<uint8_t, std::pair<gtsam::Point3, gtsam::Point3>> t_sensors;
+  // Sensor points in the tracking frame.
+  std::unordered_map<uint8_t, gtsam::Point3> t_sensors;
 
   // Constant scale and bias factors for the IMU, in the imu frame.
   gtsam::Vector3 accel_scale;
@@ -126,8 +138,14 @@ struct TrackerInfo
 // Encodes lighthouse information
 struct LighthouseInfo
 {
+  // Serial number / identifier
+  std::string id;
+
   // Static pose of this lighthouse
   gtsam::Key gTl;
+
+  // Calibration information for this lighthouse.
+  std::shared_ptr<gtsam::Cal3_S2> K;
 };
 
 // Helper to find the closest key lower that the supplied value. This is used to map
@@ -157,10 +175,6 @@ private:
   void add_lighthouse(const libsurvive_ros2::msg::Lighthouse & msg);
   void add_imu(const sensor_msgs::msg::Imu & msg);
 
-  // Estimates from the low-level driver, which we treat as priors
-  void add_tracker_pose(const geometry_msgs::msg::PoseWithCovarianceStamped & msg);
-  void add_lighthouse_pose(const geometry_msgs::msg::PoseWithCovarianceStamped & msg);
-
   // Calculate and publish a solution
   void solution_callback();
 
@@ -174,10 +188,10 @@ private:
   std::unordered_map<std::string, TrackerInfo> id_to_tracker_info_;
 
   // Lighthouse information
-  std::unordered_map<std::string, LighthouseInfo> id_to_lighthouse_info_;
+  std::unordered_map<Channel, LighthouseInfo> channel_to_lighthouse_info_;
 
   // This is the graphical model into which we'll store factors.
-  gtsam::NonlinearFactorGraph graph_;
+  gtsam::ExpressionFactorGraph graph_;
 
   // These are the initial set of values for the factors.
   gtsam::Values initial_values_;
@@ -193,13 +207,11 @@ private:
   rclcpp::Subscription<libsurvive_ros2::msg::Lighthouse>::SharedPtr lighthouse_subscriber_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_subscriber_;
   rclcpp::Subscription<libsurvive_ros2::msg::Angle>::SharedPtr angle_subscriber_;
-  rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr
-    tracker_pose_subscriber_;
-  rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr
-    lighthouse_pose_subscriber_;
 
   // Solution publisher
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr body_pose_publisher_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr tracker_pose_publisher_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr lighthouse_pose_publisher_;
 
   // TF2 publisher
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
