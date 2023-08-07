@@ -323,13 +323,13 @@ void PoserComponent::add_angle(const libsurvive_ros2::msg::Angle & msg)
   // The factor that gets added depends if this is an angle about axis 0 or axis 1.
   switch (msg.plane) {
   case 0: {  // Angle about X
-    auto angle_obs = gtsam::Point2(std::atan(msg.angle), 0);
+    auto angle_obs = gtsam::Point2(std::tan(msg.angle), 0);
     auto angle_cov = gtsam::noiseModel::Diagonal::Sigmas(gtsam::Vector2(kSigmaAngle, 1e6));
     graph_.addExpressionFactor(expression_factor, angle_obs, angle_cov);    
     break;
     }
   case 1: {  // Angle about Y
-    auto angle_obs = gtsam::Point2(0, std::atan(msg.angle));
+    auto angle_obs = gtsam::Point2(0, std::tan(msg.angle));
     auto angle_cov = gtsam::noiseModel::Diagonal::Sigmas(gtsam::Vector2(1e6, kSigmaAngle));
     graph_.addExpressionFactor(expression_factor, angle_obs, angle_cov);
     break;
