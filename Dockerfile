@@ -43,6 +43,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends                
         libusb-1.0-0-dev                                                                \
         libx11-dev                                                                      \
         libyaml-cpp-dev                                                                 \
+        python3-pip                                                                     \
         python3-scipy                                                                   \
         ros-${ROS_DISTRO}-foxglove-bridge                                               \
         ros-${ROS_DISTRO}-gtsam                                                         \
@@ -52,6 +53,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends                
         valgrind                                                                        \
         xterm                                                                           \
         zlib1g-dev                                                                      \
+    && pip3 install gtsam                                                               \
     && sudo rm -rf /var/lib/apt/lists/*
 
 # Add an 'ubuntu' user with dialout/plugdev access and can use sudo passwordless.

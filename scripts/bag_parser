@@ -21,6 +21,7 @@
 # THE SOFTWARE.
 
 import argparse
+import yaml
 
 import rosbag2_py
 from rclpy.serialization import deserialize_message
@@ -51,28 +52,54 @@ if __name__ == "__main__":
     for topic_metadata in reader.get_all_topics_and_types():
         type_map[topic_metadata.name] = topic_metadata.type
 
-    lighthouses = dict()
-    trackers = dict()
+    lighthouses = {}
+    bodies = {}
+    angles = dict()
+    num = 0
     while reader.has_next():
+        num += 1
         (topic, data, time_stamp) = reader.read_next()
         if topic == f"{args.namespace}/lighthouse":
             msg = deserialize_message(data, get_message(type_map[topic]))
-            lighthouses[msg.channel] = msg.header.frame_id
+            lighthouse_id = str(msg.header.frame_id)
+            # Bug in low-level driver...
+            if lighthouse_id != "LHB-0":
+                lighthouses[lighthouse_id] = {
+                    "lighthouse_id" : lighthouse_id,
+                    "channel" : int(msg.channel),
+                    "fcalphase" : [float(msg.fcalphase[0]), float(msg.fcalphase[1])],
+                    "fcaltilt" : [float(msg.fcaltilt[0]), float(msg.fcaltilt[1])],
+                    "fcalcurve" : [float(msg.fcalcurve[0]), float(msg.fcalcurve[1])],
+                    "fcalgibpha" : [float(msg.fcalgibpha[0]), float(msg.fcalgibpha[1])],
+                    "fcalgibmag" : [float(msg.fcalgibmag[0]), float(msg.fcalgibmag[1])],
+                    "fcalogeephase" : [float(msg.fcalogeephase[0]), float(msg.fcalogeephase[1])],
+                    "fcalogeemag" : [float(msg.fcalogeemag[0]), float(msg.fcalogeemag[1])],
+                }
         if topic == f"{args.namespace}/tracker":
             msg = deserialize_message(data, get_message(type_map[topic]))
-            if msg.header.frame_id not in trackers.keys():
-                trackers[msg.header.frame_id] = dict()
+            tracker_id = str(msg.header.frame_id)
+            bodies[tracker_id] = {
+                "body_id" : f"rigid_body/{tracker_id}",
+                "trackers" : [
+                    {
+                        "tracker_id" : tracker_id,
+                        "bTh" : [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                    }
+                ]
+            }
+        
         if topic == f"{args.namespace}/angle":
             msg = deserialize_message(data, get_message(type_map[topic]))
-            if msg.header.frame_id not in trackers.keys():
-                trackers[msg.header.frame_id] = dict()
-            if msg.channel not in trackers[msg.header.frame_id].keys():
-                trackers[msg.header.frame_id][msg.channel] = 0
-            trackers[msg.header.frame_id][msg.channel] += 1
+            if msg.header.frame_id not in angles.keys():
+                angles[msg.header.frame_id] = dict()
+            if msg.channel not in angles[msg.header.frame_id].keys():
+                angles[msg.header.frame_id][msg.channel] = 0
+            angles[msg.header.frame_id][msg.channel] += 1
+    yaml_bodies = yaml.dump(list(bodies.values()), default_flow_style=None)
+    print("Bodies:")
+    print(yaml_bodies)
+    yaml_lighthouses = yaml.dump(list(lighthouses.values()), default_flow_style=None)
     print("Lighthouses:")
-    for channel in sorted(lighthouses.keys()):
-        print(f"- [CH{channel}] {lighthouses[channel]}")
-    print("Trackers:")
-    for tracker, angles in trackers.items():
-        print(f"- {tracker}", angles)
+    print(yaml_lighthouses)
+    print("Angles:", angles)
     del reader

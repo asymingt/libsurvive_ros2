@@ -58,18 +58,6 @@ externalproject_add(libsurvive
     -DCMAKE_BUILD_TYPE=Release
 )
 
-# Obtain a specific version of the GTSAM estimation software.
-# include(ExternalProject)
-# externalproject_add(gtsam
-#   GIT_REPOSITORY https://github.com/borglab/gtsam.git
-#   GIT_TAG 621ef2e7c560e6fb06b463769d9cf7bc6f626308
-#   CMAKE_ARGS
-#     -DCMAKE_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
-#     -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
-#     -DCMAKE_BUILD_TYPE=Release
-#     -DGTSAM_BUILD_PYTHON=1
-# )
-
 # Third party libraries
 find_package(Boost REQUIRED)
 find_package(Eigen3 REQUIRED)
@@ -182,15 +170,6 @@ target_link_libraries(libsurvive_ros2_poser_node
 ament_target_dependencies(libsurvive_ros2_poser_node rclcpp)
 
 # INSTALLATION
-
-# Install python packages
-
-# externalproject_get_property(gtsam binary_dir)
-# install(
-#   DIRECTORY
-#     ${binary_dir}/python/gtsam
-#   DESTINATION
-#     ${PYTHON_INSTALL_DIR})
 
 # Install the components
 

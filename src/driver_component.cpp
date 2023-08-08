@@ -113,7 +113,12 @@ static void ootx_received_func(
 {
   survive_default_ootx_received_process(ctx, idx);
   if (_singleton) {
-    printf("IDX: index:%d == channel:%d\n", idx, ctx->bsd[idx].mode);
+    // Sometimes we get callbacks without a valid base station ID, which points to
+    // a potential bug in the driver. Catch and filter these out.
+    if (ctx->bsd[idx].BaseStationID == 0) {
+      printf("Invalid base station ID %d on channel %d", idx, ctx->bsd[idx].mode);
+      return;
+    }
     // Get serial number of lighthouse.
     char serial[16];
     snprintf(serial, sizeof(serial), "LHB-%X", (unsigned)ctx->bsd[idx].BaseStationID);

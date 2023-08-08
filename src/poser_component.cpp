@@ -34,6 +34,7 @@
 
 #include "yaml-cpp/yaml.h"
 
+
 using namespace std::chrono_literals;
 using std::placeholders::_1;
 
@@ -124,25 +125,26 @@ geometry_msgs::msg::Transform ros_transform_from_gtsam(const gtsam::Pose3 & pose
 
 gtsam::noiseModel::Gaussian::shared_ptr gtsam_from_ros(const std::array<double, 36> & msg)
 {
+  //#
   gtsam::Matrix6 cov;
-  cov << msg[21], msg[22], msg[23], msg[18], msg[19], msg[20],  // Rx
-    msg[27], msg[28], msg[29], msg[24], msg[25], msg[26],       // Ry
-    msg[33], msg[34], msg[35], msg[30], msg[31], msg[32],       // Rz
-    msg[3], msg[4], msg[5], msg[0], msg[1], msg[2],             // Tx
-    msg[9], msg[10], msg[11], msg[6], msg[7], msg[8],           // Ty
-    msg[15], msg[16], msg[17], msg[12], msg[13], msg[14];       // Tz
+  cov <<  msg[21],  msg[22],  msg[23],  msg[18],  msg[19],  msg[20],  // Rx // NOLINT
+          msg[27],  msg[28],  msg[29],  msg[24],  msg[25],  msg[26],  // Ry // NOLINT
+          msg[33],  msg[34],  msg[35],  msg[30],  msg[31],  msg[32],  // Rz // NOLINT
+          msg[3],   msg[4],   msg[5],   msg[0],   msg[1],   msg[2],   // Tx // NOLINT
+          msg[9],   msg[10],  msg[11],  msg[6],   msg[7],   msg[8],   // Ty // NOLINT
+          msg[15],  msg[16],  msg[17],  msg[12],  msg[13],  msg[14];  // Tz // NOLINT
   return gtsam::noiseModel::Gaussian::Covariance(cov);
 }
 
 std::array<double, 36> ros_from_gtsam(const gtsam::Matrix & cov)
 {
   return {
-    cov(3, 3), cov(3, 4), cov(3, 5), cov(3, 0), cov(3, 1), cov(3, 2),  // Tx
-    cov(4, 3), cov(4, 4), cov(4, 5), cov(4, 0), cov(4, 1), cov(4, 2),  // Ty
-    cov(5, 3), cov(5, 4), cov(5, 5), cov(5, 0), cov(5, 1), cov(5, 2),  // Tz
-    cov(0, 3), cov(0, 4), cov(0, 5), cov(0, 0), cov(0, 1), cov(0, 2),  // Rx
-    cov(1, 3), cov(1, 4), cov(1, 5), cov(1, 0), cov(1, 1), cov(1, 2),  // Ry
-    cov(2, 3), cov(2, 4), cov(2, 5), cov(2, 0), cov(2, 1), cov(2, 2),  // Rz
+    cov(3, 3), cov(3, 4), cov(3, 5), cov(3, 0), cov(3, 1), cov(3, 2),  // Tx // NOLINT
+    cov(4, 3), cov(4, 4), cov(4, 5), cov(4, 0), cov(4, 1), cov(4, 2),  // Ty // NOLINT
+    cov(5, 3), cov(5, 4), cov(5, 5), cov(5, 0), cov(5, 1), cov(5, 2),  // Tz // NOLINT
+    cov(0, 3), cov(0, 4), cov(0, 5), cov(0, 0), cov(0, 1), cov(0, 2),  // Rx // NOLINT
+    cov(1, 3), cov(1, 4), cov(1, 5), cov(1, 0), cov(1, 1), cov(1, 2),  // Ry // NOLINT
+    cov(2, 3), cov(2, 4), cov(2, 5), cov(2, 0), cov(2, 1), cov(2, 2),  // Rz // NOLINT
   };
 }
 
@@ -226,6 +228,25 @@ PoserComponent::PoserComponent(const rclcpp::NodeOptions & options)
     }
   }
 
+  // Add lighthouses to avoid needing to wait for OOTX packets.
+  for (auto lighthouse : config["lighthouses"]) {
+    libsurvive_ros2::msg::Lighthouse msg;
+    msg.header.stamp = this->get_clock()->now();
+    msg.header.frame_id = lighthouse["lighthouse_id"].as<std::string>();
+    msg.channel = static_cast<uint8_t>(lighthouse["channel"].as<int>());
+    for (size_t i = 0; i < 2; i++) {
+      msg.fcalcurve[i] = lighthouse["fcalcurve"][i].as<double>();
+      msg.fcalgibmag[i] = lighthouse["fcalgibmag"][i].as<double>();
+      msg.fcalgibpha[i] = lighthouse["fcalgibpha"][i].as<double>();
+      msg.fcalogeemag[i] = lighthouse["fcalogeemag"][i].as<double>();
+      msg.fcalogeephase[i] = lighthouse["fcalogeephase"][i].as<double>();
+      msg.fcalphase[i] = lighthouse["fcalphase"][i].as<double>();
+      msg.fcaltilt[i] = lighthouse["fcaltilt"][i].as<double>();
+    }
+    // TODO(asymingt) you can't insert a lighthouse before you have a measurement
+    // this->add_lighthouse(msg);
+  }
+
   // Add registration information
   for (auto registration : config["registration"]) {
     std::string body_id = registration["body_id"].as<std::string>();
@@ -290,13 +311,21 @@ void PoserComponent::add_angle(const libsurvive_ros2::msg::Angle & msg)
   }
   auto & lighthouse_info = channel_to_lighthouse_info_[msg.channel];
 
-  // Verify that the tracker has this channel
-  if (tracker_info.t_sensors.count(msg.sensor_id) == 0) {
+  // Verify that the tracker has this sensor id
+  if (tracker_info.t_points.count(msg.sensor_id) == 0) {
     RCLCPP_ERROR_STREAM(this->get_logger(),
-      "Tracker " << tracker_id << " sensor " << msg.sensor_id << " does not exist");
+      "Tracker " << tracker_id << " sensor " << int(msg.sensor_id) << " does not exist");
   }
-  auto & t_sensor = tracker_info.t_sensors[msg.sensor_id];
 
+  // Verify that we have a plane of 0 or 1
+  if (msg.plane > 1) {
+    RCLCPP_ERROR_STREAM(this->get_logger(),
+      "Tracker " << tracker_id << " plane " << int(msg.plane) << " is not in  {0, 1}");
+  }
+
+  // Get the point and normal of the sensor.
+  auto & t_sensor = tracker_info.t_points[msg.sensor_id];
+  
   // We rely on IMU inserting the actual states. We're just going to find the
   // closest one to the angle timestamp and use it. There should be one...
   const Timestamp stamp = rclcpp::Time(msg.header.stamp).nanoseconds();
@@ -305,36 +334,25 @@ void PoserComponent::add_angle(const libsurvive_ros2::msg::Angle & msg)
     return;
   }
 
-  // Expression to move the the position of the sensor from the tracking to global frame.
-  gtsam::Point3_ t_sensor_(t_sensor);
-  gtsam::Pose3_ gTb_(*gTb);
-  gtsam::Pose3_ bTh_(body_info.bTh[tracker_id]);
-  gtsam::Pose3_ hTt_(tracker_info.tTh.inverse());
-  gtsam::Point3_ g_sensor_ =
-    gtsam::transformFrom(gtsam::compose(gTb_, gtsam::compose(bTh_, hTt_)), t_sensor_);
+  // Transform sensor to body-frame. We can maybe optimize this at some point in the
+  // future to prevent having to this for every angle measurement. Not sure what sort
+  // of performance increase it would give us though.
+  auto & bTh = body_info.bTh[tracker_id];
+  auto & tTh = tracker_info.tTh;
+  auto b_sensor = (bTh * tTh.inverse()).transformFrom(t_sensor);
 
-  // Now we can use a simple pinhole model to predict the (u, v, 1) coordinate of the
-  // sensor on some virtual image plane located at 1m from the sensor. This is because
-  // the "K" has fx = 1.0, and fy = 1.0, and all other elements zero.
-  gtsam::Pose3_ gTl_(lighthouse_info.gTl);
-  gtsam::Cal3_S2_ K_(*lighthouse_info.K);
-  auto expression_factor = gtsam::project3(gTl_, g_sensor_, K_);
+  // Observed angle and error in that angle.
+  auto angle_cov = gtsam::noiseModel::Diagonal::Sigmas(gtsam::Vector1(kSigmaAngle));
 
-  // The factor that gets added depends if this is an angle about axis 0 or axis 1.
-  switch (msg.plane) {
-  case 0: {  // Angle about X
-    auto angle_obs = gtsam::Point2(std::tan(msg.angle), 0);
-    auto angle_cov = gtsam::noiseModel::Diagonal::Sigmas(gtsam::Vector2(kSigmaAngle, 1e6));
-    graph_.addExpressionFactor(expression_factor, angle_obs, angle_cov);    
-    break;
-    }
-  case 1: {  // Angle about Y
-    auto angle_obs = gtsam::Point2(0, std::tan(msg.angle));
-    auto angle_cov = gtsam::noiseModel::Diagonal::Sigmas(gtsam::Vector2(1e6, kSigmaAngle));
-    graph_.addExpressionFactor(expression_factor, angle_obs, angle_cov);
-    break;
-    }
-  }
+  // Add a between factor 
+  graph_.emplace_shared<gtsam::Gen2LightAngleFactor>(
+      lighthouse_info.gTl,                  // lighthouse -> global frame
+      *gTb,                                 // body -> global frame
+      msg.angle,                            // observed angle
+      angle_cov,                            // uncertainty in our observation
+      msg.plane > 0,                        // is this the y-axis?
+      b_sensor,                             // sensor location in the body frame
+      lighthouse_info.bcal[msg.plane]);     // lighthouse calibration parameters
 }
 
 void PoserComponent::add_imu(const sensor_msgs::msg::Imu & msg)
@@ -514,7 +532,8 @@ void PoserComponent::add_tracker(const libsurvive_ros2::msg::Tracker & msg)
   // Sensor locations and normals.
   for (size_t k = 0; k < msg.channels.size(); k++) {
     const uint8_t channel = msg.channels[k];
-    tracker_info.t_sensors[channel] = gtsam_from_ros(msg.points[k]);
+    tracker_info.t_points[channel] = gtsam_from_ros(msg.points[k]);
+    tracker_info.t_normals[channel] = gtsam_from_ros(msg.normals[k]);
   }
 
   // The IMU factor needs to know the pose of the IMU sensor in the body frame in
@@ -543,29 +562,35 @@ void PoserComponent::add_lighthouse(const libsurvive_ros2::msg::Lighthouse & msg
     const std::string & orig_lighthouse_id = channel_to_lighthouse_info_[lighthouse_channel].id;
     if (orig_lighthouse_id != lighthouse_id) {
       RCLCPP_ERROR_STREAM(this->get_logger(), 
-        "New lighthouse " << lighthouse_id << " on channel " << lighthouse_channel
+        "New lighthouse " << lighthouse_id << " on channel " << int(lighthouse_channel)
           << " previously received from " << orig_lighthouse_id);
     }
     return;
   }
   RCLCPP_INFO_STREAM(this->get_logger(), 
-    "Adding lighthouse " << lighthouse_id << " on channel " << lighthouse_channel);
+    "Adding lighthouse " << lighthouse_id << " on channel " << int(lighthouse_channel));
   auto & lighthouse_info = channel_to_lighthouse_info_[lighthouse_channel];
 
-  // Se the ID immediately.
+  // Set the ID immediately.
   lighthouse_info.id = lighthouse_id;
 
-  // The camera projection matrix for this lighthouse is super easy. We want the focal length in
-  // X and Y to be 1. This is so that a point [x,y,z] when projected on the image plane lies along
-  // unit 1 in z. So we can go atan(angle_about_y) == u, or atan(angle_about_x) == v.
-  lighthouse_info.K.reset(new gtsam::Cal3_S2(1.0, 1.0, 0.0, 0.0, 0.0));
+  // Copy over all calibration params for this lighthouse.  
+  for (size_t i = 0; i < 2; i++) {
+    lighthouse_info.bcal[i].phase = msg.fcalphase[i];
+    lighthouse_info.bcal[i].tilt = msg.fcaltilt[i];
+    lighthouse_info.bcal[i].curve = msg.fcalcurve[i];
+    lighthouse_info.bcal[i].gibpha = msg.fcalgibpha[i];
+    lighthouse_info.bcal[i].gibmag = msg.fcalgibmag[i];
+    lighthouse_info.bcal[i].ogeephase = msg.fcalogeephase[i];
+    lighthouse_info.bcal[i].ogeemag = msg.fcalogeemag[i];
+  }
 
-  // This is out initial prior on the lighthouse location given no observations.
+  // Weak initial estimate of lighthouse pose
   auto obs_gTl = gtsam::Pose3(
     gtsam::Rot3::Quaternion(1.0, 0.0, 0.0, 0.0),
     gtsam::Point3(0.0, 0.0, 0.0));
   auto cov_gTl = gtsam::noiseModel::Diagonal::Sigmas(
-    gtsam::Vector6(100.0, 100.0, 100.0, 100.0, 100.0, 100.0));
+    gtsam::Vector6(100.0, 100.0, 100.0, 10.0, 10.0, 10.0));
 
   // Allocate a new variable.
   lighthouse_info.gTl = next_available_key_++;
@@ -573,51 +598,9 @@ void PoserComponent::add_lighthouse(const libsurvive_ros2::msg::Lighthouse & msg
   // Set its initial value.
   initial_values_.insert(lighthouse_info.gTl, obs_gTl);
 
-  // Add a prior on the value.
+  // Add a prior on the value``.
   graph_.add(gtsam::PriorFactor<gtsam::Pose3>(lighthouse_info.gTl, obs_gTl, cov_gTl));
 }
-
-// void PoserComponent::add_tracker_pose(const geometry_msgs::msg::PoseWithCovarianceStamped & msg)
-// {
-//   const std::string & tracker_id = msg.header.frame_id;
-//   if (!id_to_tracker_info_.count(tracker_id)) {
-//     return;
-//   }
-//   const Timestamp stamp = gtsam_from_ros(msg.header.stamp);
-//   auto & tracker_info = this->id_to_tracker_info_[tracker_id];
-//   auto & body_info = this->id_to_body_info_[tracker_info.body_id];
-
-//   // We can't add an observation for a state that does not exist.
-//   auto gTb = find_key_for_closest_stamp(body_info.gTb, stamp);
-//   if (!gTb) {
-//     return;
-//   }
-
-//   // Add a prior factor on the pose state
-//   auto gTt_obs = gtsam_from_ros(msg.pose.pose);
-//   auto hTb = body_info.bTh[tracker_id].inverse();
-//   auto tTb = tracker_info.tTh * hTb;
-//   auto gTb_obs = gTt_obs * tTb;
-//   auto gTt_cov = gtsam_from_ros(msg.pose.covariance);
-//   auto gTb_cov = gTt_cov;
-//   graph_.add(gtsam::PriorFactor<gtsam::Pose3>(*gTb, gTb_obs, gTb_cov));
-// }
-
-// void PoserComponent::add_lighthouse_pose(const geometry_msgs::msg::PoseWithCovarianceStamped & msg)
-// {
-//   const std::string & lighthouse_id = msg.header.frame_id;
-//   if (!id_to_lighthouse_info_.count(lighthouse_id)) {
-//     return;
-//   }
-//   auto & lighthouse_info = this->id_to_lighthouse_info_[lighthouse_id];
-
-//   // Collect observation
-//   auto obs_gTl = gtsam_from_ros(msg.pose.pose);
-//   auto cov_gTl = gtsam_from_ros(msg.pose.covariance);
-
-//   // Add the observation
-//   graph_.add(gtsam::PriorFactor<gtsam::Pose3>(lighthouse_info.gTl, obs_gTl, cov_gTl));
-// }
 
 void PoserComponent::solution_callback()
 {

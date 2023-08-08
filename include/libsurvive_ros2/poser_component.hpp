@@ -61,7 +61,6 @@
 
 // Project includes
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
-#include "gtsam/geometry/Rot2.h"
 #include "gtsam/inference/Symbol.h"
 #include "gtsam/navigation/ImuBias.h"
 #include "gtsam/navigation/ImuFactor.h"
@@ -79,6 +78,8 @@
 #include "sensor_msgs/msg/imu.hpp"
 #include "tf2_ros/transform_broadcaster.h"
 #include "tf2_ros/static_transform_broadcaster.h"
+
+#include "poser_factors.hpp"
 
 namespace libsurvive_ros2
 {
@@ -120,7 +121,8 @@ struct TrackerInfo
   gtsam::Pose3 tTh;
 
   // Sensor points in the tracking frame.
-  std::unordered_map<uint8_t, gtsam::Point3> t_sensors;
+  std::unordered_map<uint8_t, gtsam::Point3> t_points;
+  std::unordered_map<uint8_t, gtsam::Point3> t_normals;
 
   // Constant scale and bias factors for the IMU, in the imu frame.
   gtsam::Vector3 accel_scale;
@@ -144,8 +146,8 @@ struct LighthouseInfo
   // Static pose of this lighthouse
   gtsam::Key gTl;
 
-  // Calibration information for this lighthouse.
-  std::shared_ptr<gtsam::Cal3_S2> K;
+  // Calibration parameters for the two axes
+  gtsam::BaseStationCal bcal[2];
 };
 
 // Helper to find the closest key lower that the supplied value. This is used to map
