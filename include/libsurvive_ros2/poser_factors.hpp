@@ -1278,14 +1278,14 @@ class Gen2LightAngleFactor : public NoiseModelFactor2<Pose3, Pose3> {
   Gen2LightAngleFactor() {}
 
   Gen2LightAngleFactor(
-    Key key_gTl,                    // gtsam::Key for global -> lighthouse frame transform
+    Key key_lTg,                    // gtsam::Key for global -> lighthouse frame transform
     Key key_gTb,                    // gtsam::Key for body -> global frame transform
     const double & angle,           // Measured agle in radians
     const SharedNoiseModel& model,  // Noise model
     bool is_y_axis,                 // if true, axis = 1 else axis = 0       
     const Point3 & sensor,          // Pose of the sensor in the body frame
     const BaseStationCal & bcal)    // Base station calibration
-      : Base(model, key_gTl, key_gTb)
+      : Base(model, key_lTg, key_gTb)
       , angle_(angle)
       , is_y_axis_(is_y_axis)
       , bcal_(bcal)
@@ -1296,22 +1296,22 @@ class Gen2LightAngleFactor : public NoiseModelFactor2<Pose3, Pose3> {
   }
 
   Vector evaluateError(
-    const Pose3& gTl,
+    const Pose3& lTg,
     const Pose3& gTb,
     boost::optional<Matrix&> H1 = boost::none,
     boost::optional<Matrix&> H2 = boost::none) const override
   {
     LinmathAxisAnglePose lh_p, obj_p;
     
-    auto [gTl_axis, gTl_angle] = gTl.rotation().axisAngle();
-    lh_p.Pos[0] = gTl.translation().x();
-	lh_p.Pos[1] = gTl.translation().y();
-	lh_p.Pos[2] = gTl.translation().z();
-    lh_p.AxisAngleRot[0] = gTl_axis.unitVector().x() * gTl_angle;
-	lh_p.AxisAngleRot[1] = gTl_axis.unitVector().y() * gTl_angle;
-	lh_p.AxisAngleRot[2] = gTl_axis.unitVector().z() * gTl_angle;
+    auto [lTg_axis, lTg_angle] = lTg.rotation().axisAngle();
+    lh_p.Pos[0] = lTg.translation().x();
+	lh_p.Pos[1] = lTg.translation().y();
+	lh_p.Pos[2] = lTg.translation().z();
+    lh_p.AxisAngleRot[0] = lTg_axis.unitVector().x() * lTg_angle;
+	lh_p.AxisAngleRot[1] = lTg_axis.unitVector().y() * lTg_angle;
+	lh_p.AxisAngleRot[2] = lTg_axis.unitVector().z() * lTg_angle;
 
-    auto [gTb_axis, gTb_angle] = gTl.rotation().axisAngle();
+    auto [gTb_axis, gTb_angle] = gTb.rotation().axisAngle();
     obj_p.Pos[0] = gTb.translation().x();
 	obj_p.Pos[1] = gTb.translation().y();
 	obj_p.Pos[2] = gTb.translation().z();

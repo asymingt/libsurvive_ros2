@@ -143,8 +143,9 @@ struct LighthouseInfo
   // Serial number / identifier
   std::string id;
 
-  // Static pose of this lighthouse
-  gtsam::Key gTl;
+  // Static pose of this lighthouse. We express this in the opposite way to what you
+  // would expect because the jacobians used in the factor expect it in this way.
+  gtsam::Key lTg;
 
   // Calibration parameters for the two axes
   gtsam::BaseStationCal bcal[2];

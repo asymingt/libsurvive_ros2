@@ -197,15 +197,6 @@ PoserComponent::PoserComponent(const rclcpp::NodeOptions & options)
     // the global frame, and set a prior on that state
     id_to_body_info_[body_id].is_static = body["static"].as<bool>();
     if (id_to_body_info_[body_id].is_static) {
-      
-      // Velocity is always zero.
-      id_to_body_info_[body_id].g_V[0] = next_available_key_++;
-      auto g_V_obs = gtsam::Vector3(0.0, 0.0, 0.0);
-      auto g_V_cov = gtsam::noiseModel::Diagonal::Sigmas(
-          gtsam::Vector3(1e-9, 1e-9, 1e-9));
-      graph_.add(gtsam::PriorFactor<gtsam::Vector3>(
-          id_to_body_info_[body_id].g_V[0], g_V_obs, g_V_cov));
-      initial_values_.insert(id_to_body_info_[body_id].g_V[0], g_V_obs);
 
       // Pose is unknown, but it start it off somewhere reasonable.
       id_to_body_info_[body_id].gTb[0] = next_available_key_++;
@@ -213,7 +204,7 @@ PoserComponent::PoserComponent(const rclcpp::NodeOptions & options)
         gtsam::Rot3::Quaternion(1.0, 0.0, 0.0, 0.0),
         gtsam::Point3(0.0, 0.0, 0.0));
       auto gTb_cov = gtsam::noiseModel::Diagonal::Sigmas(
-          gtsam::Vector6(10.0, 10.0, 10.0, 100.0, 100.0, 100.0));
+          gtsam::Vector6(100.0, 100.0, 100.0, 100.0, 100.0, 100.0));
       graph_.add(gtsam::PriorFactor<gtsam::Pose3>(
           id_to_body_info_[body_id].gTb[0], gTb_obs, gTb_cov));
       initial_values_.insert(id_to_body_info_[body_id].gTb[0], gTb_obs);
@@ -298,43 +289,6 @@ PoserComponent::PoserComponent(const rclcpp::NodeOptions & options)
   // Add a timer to extract solution and publish pose
   timer_ = this->create_wall_timer(
     100ms, std::bind(&PoserComponent::solution_callback, this));
-  
-  // TESTING!!!
-  // auto angle_cov = gtsam::noiseModel::Diagonal::Sigmas(gtsam::Vector1(kSigmaAngle));
-  // gtsam::BaseStationCal bcal = {
-  //   .phase = 0,
-  //   .tilt = 0,
-  //   .curve = 0,
-  //   .gibpha = 0,
-  //   .gibmag = 0,
-  //   .ogeephase = 0,
-  //   .ogeemag = 0,
-  // };
-  // auto factorX = std::make_shared<gtsam::Gen2LightAngleFactor>(
-  //     0,                                    // lighthouse -> global frame
-  //     1,                                    // body -> global frame
-  //     0,                                    // observed angle
-  //     angle_cov,                            // uncertainty in our observation
-  //     0,                                    // is this the y-axis?
-  //     gtsam::Point3(0, 0, 0),               // sensor location in the body frame
-  //     bcal);                                // perfect sensor
-  // auto factorY = std::make_shared<gtsam::Gen2LightAngleFactor>(
-  //     0,                                    // lighthouse -> global frame
-  //     1,                                    // body -> global frame
-  //     0,                                    // observed angle
-  //     angle_cov,                            // uncertainty in our observation
-  //     1,                                    // is this the y-axis?
-  //     gtsam::Point3(0, 0, 0),               // sensor location in the body frame
-  //     bcal);                                // perfect sensor
-  // auto test_gTb = gtsam::Pose3(
-  //   gtsam::Rot3::Quaternion(1.0, 0.0, 0.0, 0.0),
-  //   gtsam::Point3(0.1, 0.1, -1.0));
-  // auto test_gTl = gtsam::Pose3(
-  //   gtsam::Rot3::Quaternion(1.0, 0.0, 0.0, 0.0),
-  //   gtsam::Point3(0.0, 0.0, 0.0));
-  // auto errX = factorX->evaluateError(test_gTl, test_gTb);
-  // auto errY = factorY->evaluateError(test_gTl, test_gTb);
-  // RCLCPP_WARN_STREAM(this->get_logger(), "Error state X = " << errX(0) << " and Y = " << errY(0));
 }
 
 PoserComponent::~PoserComponent()
@@ -379,10 +333,12 @@ void PoserComponent::add_angle(const libsurvive_ros2::msg::Angle & msg)
     stamp_prev = body_info.gTb.rbegin()->first;
   }
   
-  // We rely on IMU inserting the actual states. We're just going to find the
-  // closest one to the angle timestamp and use it. There should be one...
   std::optional<gtsam::Key> gTb;
-  if (kUseImuData) {
+  if (body_info.is_static) {
+    // If this is a static body, then we shouldn't keep adding states. Just use the
+    // static single state and treat all observations.
+    gTb = body_info.gTb[0];
+  } else if (kUseImuData) {
     // If the IMU is being used and there is no pose state, we have to wait for one to
     // be inserted, so it makes more sense to return at this point.
     gTb = find_key_for_closest_stamp(body_info.gTb, stamp_curr);
@@ -438,7 +394,7 @@ void PoserComponent::add_angle(const libsurvive_ros2::msg::Angle & msg)
   // Observed angle and error in that angle.
   auto angle_cov = gtsam::noiseModel::Diagonal::Sigmas(gtsam::Vector1(kSigmaAngle));
   graph_.emplace_shared<gtsam::Gen2LightAngleFactor>(
-      lighthouse_info.gTl,                  // lighthouse -> global frame
+      lighthouse_info.lTg,                  // lighthouse -> global frame
       *gTb,                                 // body -> global frame
       msg.angle,                            // observed angle
       angle_cov,                            // uncertainty in our observation
@@ -679,10 +635,8 @@ void PoserComponent::add_tracker(const libsurvive_ros2::msg::Tracker & msg)
   // the x and y offset by averaging three equidistant sensors spaced at 120deg to
   // find the center coordinate and use that as the bolt location. This transform
   // must be hard-coded somewhere in SteamVR to make things work.
-  auto identity_rotation = gtsam::Rot3::AxisAngle(gtsam::Point3(1.0, 0.0, 0.0), M_PI_2);
   auto ccw_90deg_about_x = gtsam::Rot3::AxisAngle(gtsam::Point3(1.0, 0.0, 0.0), M_PI_2);
   auto ccw_90deg_about_y = gtsam::Rot3::AxisAngle(gtsam::Point3(0.0, 1.0, 0.0), M_PI_2);
-  auto ccw_90deg_about_z = gtsam::Rot3::AxisAngle(gtsam::Point3(0.0, 0.0, 1.0), M_PI_2);
   tracker_info.tTh = gtsam::Pose3(ccw_90deg_about_x * ccw_90deg_about_y,
     gtsam::Point3(x, y, -0.007));
 
@@ -735,26 +689,27 @@ void PoserComponent::add_lighthouse(const libsurvive_ros2::msg::Lighthouse & msg
     lighthouse_info.bcal[i].ogeemag = msg.fcalogeemag[i];
   }
 
-  // Weak initial estimate of lighthouse pose
-  auto obs_gTl = gtsam::Pose3(
+  // Weak initial estimate of the global -> lighthouse pose. Take note that this is
+  // the inverse representation of what you'd expect.
+  auto obs_lTg = gtsam::Pose3(
     gtsam::Rot3::Quaternion(1.0, 0.0, 0.0, 0.0),
     gtsam::Point3(0.0, 0.0, -1.0));
-  auto cov_gTl = gtsam::noiseModel::Diagonal::Sigmas(
-    gtsam::Vector6(100.0, 100.0, 100.0, 10.0, 10.0, 10.0));
+  auto cov_lTg = gtsam::noiseModel::Diagonal::Sigmas(
+    gtsam::Vector6(10.0, 10.0, 10.0, 10.0, 10.0, 10.0));
 
   // Allocate a new variable.
-  lighthouse_info.gTl = next_available_key_++;
+  lighthouse_info.lTg = next_available_key_++;
 
   // Set its initial value.
-  initial_values_.insert(lighthouse_info.gTl, obs_gTl);
+  initial_values_.insert(lighthouse_info.lTg, obs_lTg);
 
   // Add a prior on the value``.
-  graph_.add(gtsam::PriorFactor<gtsam::Pose3>(lighthouse_info.gTl, obs_gTl, cov_gTl));
+  graph_.add(gtsam::PriorFactor<gtsam::Pose3>(lighthouse_info.lTg, obs_lTg, cov_lTg));
 }
 
 void PoserComponent::solution_callback()
 {
-  // Incremental update of the graph usng the latest values and factors.
+  // Incremental update of the graph using the latest values and factors.
   graph_.print("Graph");
   initial_values_.print("Values");
   isam2_.update(graph_, initial_values_);
@@ -832,13 +787,13 @@ void PoserComponent::solution_callback()
   // Print lighthouses
   for (const auto & [channel, lighthouse_info] : channel_to_lighthouse_info_) {
     // Extract the solution
-    gtsam::Pose3 gTl = isam2_.calculateEstimate<gtsam::Pose3>(lighthouse_info.gTl);
-    gtsam::Matrix cov = isam2_.marginalCovariance(lighthouse_info.gTl);
+    gtsam::Pose3 lTg = isam2_.calculateEstimate<gtsam::Pose3>(lighthouse_info.lTg);
+    gtsam::Matrix cov = isam2_.marginalCovariance(lighthouse_info.lTg);
     // Create a message containing the transform
     geometry_msgs::msg::PoseWithCovarianceStamped msg;
     msg.header.stamp = now;
     msg.header.frame_id = lighthouse_info.id;
-    msg.pose.pose = ros_from_gtsam(gTl);
+    msg.pose.pose = ros_from_gtsam(lTg.inverse());
     msg.pose.covariance = ros_from_gtsam(cov);
     lighthouse_pose_publisher_->publish(msg);
     // Package up a transform
@@ -846,7 +801,7 @@ void PoserComponent::solution_callback()
     transform_msg.header.stamp = msg.header.stamp;
     transform_msg.header.frame_id = tracking_frame_;
     transform_msg.child_frame_id = lighthouse_info.id;
-    transform_msg.transform = ros_transform_from_gtsam(gTl);
+    transform_msg.transform = ros_transform_from_gtsam(lTg.inverse());
     tf_static_broadcaster_->sendTransform(transform_msg);
   }
 
