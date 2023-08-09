@@ -152,6 +152,7 @@ static void ootx_received_func(
 // Callback for tracker event
 static int config_func(struct SurviveObject * so, char * ct0conf, int len)
 {
+  std::cout << ct0conf << std::endl;
   const int res = survive_default_config_process(so, ct0conf, len);
   if (_singleton) {
     // Get the approximate time

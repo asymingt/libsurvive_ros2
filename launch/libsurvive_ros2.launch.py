@@ -144,7 +144,7 @@ def generate_launch_description():
                 name="libsurvive_ros2_container",
                 namespace=LaunchConfiguration("namespace"),
                 prefix=launch_prefix,
-                output="screen",
+                output="own_log",
             ),
             LoadComposableNodes(
                 target_container="libsurvive_ros2_container",
@@ -188,7 +188,7 @@ def generate_launch_description():
                 namespace=LaunchConfiguration("namespace"),
                 condition=IfCondition(enable_driver),
                 prefix=launch_prefix,
-                output="screen",
+                output="own_log",
                 parameters=driver_parameters,
             ),
             Node(
@@ -198,7 +198,7 @@ def generate_launch_description():
                 namespace=LaunchConfiguration("namespace"),
                 condition=IfCondition(enable_poser),
                 prefix=launch_prefix,
-                output="screen",
+                output="own_log",
                 parameters=poser_parameters,
             ),
         ],
@@ -217,7 +217,7 @@ def generate_launch_description():
             {"min_qos_depth": 100},
         ],
         condition=IfCondition(LaunchConfiguration("web_bridge")),
-        output="log",
+        output="own_log",
     )
 
     # For recording all data from the experiment. We'll use the MCAP format by
@@ -225,7 +225,7 @@ def generate_launch_description():
     bag_recorder_node = ExecuteProcess(
         cmd=["ros2", "bag", "record", "-s", "mcap", "-o", LaunchConfiguration("record"), "-a"],
         condition=IfCondition(enable_record),
-        output="log",
+        output="own_log",
     )
 
     # In replay we're going to take the raw data and recalculate the poses and TF2
@@ -241,7 +241,7 @@ def generate_launch_description():
                 "/libsurvive/pose/lighthouse:=/old/pose/lighthouse",
             ],
         condition=UnlessCondition(enable_driver),
-        output="log",
+        output="own_log",
     )
 
     return LaunchDescription(

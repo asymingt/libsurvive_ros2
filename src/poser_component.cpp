@@ -51,6 +51,7 @@ const double kOmegaDriftSigma = 0.1;
 const double kIntegrationSigma = 0.1;
 const double kSensorPositionSigma = 0.0001;
 const double kSigmaAngle = 0.001;
+const double kUseImuData = true;
 
 // Time between bias states
 const Timestamp kImuBiasTimeNs = 1e9;
@@ -97,11 +98,11 @@ gtsam::Pose3 gtsam_from_ros(const geometry_msgs::msg::Transform & pose)
 
 geometry_msgs::msg::Pose ros_from_gtsam(const gtsam::Pose3 & pose)
 {
+  gtsam::Quaternion quaternion = pose.rotation().toQuaternion();
   geometry_msgs::msg::Pose msg;
   msg.position.x = pose.translation().x();
   msg.position.y = pose.translation().y();
   msg.position.z = pose.translation().z();
-  gtsam::Quaternion quaternion = pose.rotation().toQuaternion();
   msg.orientation.w = quaternion.w();
   msg.orientation.x = quaternion.x();
   msg.orientation.y = quaternion.y();
@@ -111,11 +112,11 @@ geometry_msgs::msg::Pose ros_from_gtsam(const gtsam::Pose3 & pose)
 
 geometry_msgs::msg::Transform ros_transform_from_gtsam(const gtsam::Pose3 & pose)
 {
+  gtsam::Quaternion quaternion = pose.rotation().toQuaternion();
   geometry_msgs::msg::Transform msg;
   msg.translation.x = pose.translation().x();
   msg.translation.y = pose.translation().y();
   msg.translation.z = pose.translation().z();
-  gtsam::Quaternion quaternion = pose.rotation().toQuaternion();
   msg.rotation.w = quaternion.w();
   msg.rotation.x = quaternion.x();
   msg.rotation.y = quaternion.y();
@@ -243,8 +244,7 @@ PoserComponent::PoserComponent(const rclcpp::NodeOptions & options)
       msg.fcalphase[i] = lighthouse["fcalphase"][i].as<double>();
       msg.fcaltilt[i] = lighthouse["fcaltilt"][i].as<double>();
     }
-    // TODO(asymingt) you can't insert a lighthouse before you have a measurement
-    // this->add_lighthouse(msg);
+    this->add_lighthouse(msg);
   }
 
   // Add registration information
@@ -255,11 +255,21 @@ PoserComponent::PoserComponent(const rclcpp::NodeOptions & options)
         "Unknown body frame '" << body_id << "' specified in registration");
       continue;
     }
+    auto & body_info = id_to_body_info_[body_id];
+    if (!body_info.is_static) {
+      RCLCPP_WARN_STREAM(this->get_logger(),
+        "Body frame '" << body_id << "' is not marked static");
+      continue;
+    }
     std::vector<double> gTb = registration["gTb"].as<std::vector<double>>();
     auto gTb_obs = gtsam::Pose3(
       gtsam::Rot3::Quaternion(gTb[3], gTb[4], gTb[5], gTb[6]),
       gtsam::Point3(gTb[0], gTb[1], gTb[2]));
-    initial_values_.update(id_to_body_info_[body_id].gTb[0], gTb_obs);
+    auto gTb_cov = gtsam::noiseModel::Diagonal::Sigmas(
+        gtsam::Vector6(1e-9, 1e-9, 1e-9, 1e-9, 1e-9, 1e-9));
+    graph_.add(gtsam::PriorFactor<gtsam::Pose3>(
+        body_info.gTb[0], gTb_obs, gTb_cov));
+    initial_values_.update(body_info.gTb[0], gTb_obs);
   }
 
   // TODO(asymingt) this might not play very well with composable node inter-process
@@ -288,6 +298,43 @@ PoserComponent::PoserComponent(const rclcpp::NodeOptions & options)
   // Add a timer to extract solution and publish pose
   timer_ = this->create_wall_timer(
     100ms, std::bind(&PoserComponent::solution_callback, this));
+  
+  // TESTING!!!
+  // auto angle_cov = gtsam::noiseModel::Diagonal::Sigmas(gtsam::Vector1(kSigmaAngle));
+  // gtsam::BaseStationCal bcal = {
+  //   .phase = 0,
+  //   .tilt = 0,
+  //   .curve = 0,
+  //   .gibpha = 0,
+  //   .gibmag = 0,
+  //   .ogeephase = 0,
+  //   .ogeemag = 0,
+  // };
+  // auto factorX = std::make_shared<gtsam::Gen2LightAngleFactor>(
+  //     0,                                    // lighthouse -> global frame
+  //     1,                                    // body -> global frame
+  //     0,                                    // observed angle
+  //     angle_cov,                            // uncertainty in our observation
+  //     0,                                    // is this the y-axis?
+  //     gtsam::Point3(0, 0, 0),               // sensor location in the body frame
+  //     bcal);                                // perfect sensor
+  // auto factorY = std::make_shared<gtsam::Gen2LightAngleFactor>(
+  //     0,                                    // lighthouse -> global frame
+  //     1,                                    // body -> global frame
+  //     0,                                    // observed angle
+  //     angle_cov,                            // uncertainty in our observation
+  //     1,                                    // is this the y-axis?
+  //     gtsam::Point3(0, 0, 0),               // sensor location in the body frame
+  //     bcal);                                // perfect sensor
+  // auto test_gTb = gtsam::Pose3(
+  //   gtsam::Rot3::Quaternion(1.0, 0.0, 0.0, 0.0),
+  //   gtsam::Point3(0.1, 0.1, -1.0));
+  // auto test_gTl = gtsam::Pose3(
+  //   gtsam::Rot3::Quaternion(1.0, 0.0, 0.0, 0.0),
+  //   gtsam::Point3(0.0, 0.0, 0.0));
+  // auto errX = factorX->evaluateError(test_gTl, test_gTb);
+  // auto errY = factorY->evaluateError(test_gTl, test_gTb);
+  // RCLCPP_WARN_STREAM(this->get_logger(), "Error state X = " << errX(0) << " and Y = " << errY(0));
 }
 
 PoserComponent::~PoserComponent()
@@ -322,29 +369,74 @@ void PoserComponent::add_angle(const libsurvive_ros2::msg::Angle & msg)
     RCLCPP_ERROR_STREAM(this->get_logger(),
       "Tracker " << tracker_id << " plane " << int(msg.plane) << " is not in  {0, 1}");
   }
-
-  // Get the point and normal of the sensor.
-  auto & t_sensor = tracker_info.t_points[msg.sensor_id];
+  
+  // Get the current timestamp
+  const Timestamp stamp_curr = rclcpp::Time(msg.header.stamp).nanoseconds();
+  
+  // Get the last pose timestamp, if one exists for this body.
+  std::optional<Timestamp> stamp_prev = std::nullopt;
+  if (body_info.gTb.size()) {
+    stamp_prev = body_info.gTb.rbegin()->first;
+  }
   
   // We rely on IMU inserting the actual states. We're just going to find the
   // closest one to the angle timestamp and use it. There should be one...
-  const Timestamp stamp = rclcpp::Time(msg.header.stamp).nanoseconds();
-  auto gTb = find_key_for_closest_stamp(body_info.gTb, stamp);
-  if (!gTb) {
-    return;
+  std::optional<gtsam::Key> gTb;
+  if (kUseImuData) {
+    // If the IMU is being used and there is no pose state, we have to wait for one to
+    // be inserted, so it makes more sense to return at this point.
+    gTb = find_key_for_closest_stamp(body_info.gTb, stamp_curr);
+    if (!gTb) {
+      return;
+    }
+  } else {
+    // If the IMU is ignored, then we need to insert a state to represent the pose of
+    // body at the current time. But first, let's cover the case where we've received
+    // an angle measurement from this body before.
+    if (body_info.gTb.count(stamp_curr) == 0) {
+      body_info.gTb[stamp_curr] = next_available_key_++;
+      if (!stamp_prev) {
+        RCLCPP_INFO_STREAM(this->get_logger(),
+          "Adding prior pose for body " << tracker_info.body_id);
+        auto gTb_obs = gtsam::Pose3(
+          gtsam::Rot3::Quaternion(1.0, 0.0, 0.0, 0.0),
+          gtsam::Point3(0.0, 0.0, 0.0));
+        auto gTb_cov = gtsam::noiseModel::Diagonal::Sigmas(
+          gtsam::Vector6(100.0, 100.0, 100.0, 100.0, 100.0, 100.0));
+        graph_.add(
+          gtsam::PriorFactor<gtsam::Pose3>(
+            body_info.gTb[stamp_curr], gTb_obs, gTb_cov));
+        initial_values_.insert(body_info.gTb[stamp_curr], gTb_obs);
+      } else {
+        auto gTb_obs = gtsam::Pose3(
+          gtsam::Rot3::Quaternion(1.0, 0.0, 0.0, 0.0),
+          gtsam::Point3(0.0, 0.0, 0.0));
+        auto gTb_cov = gtsam::noiseModel::Isotropic::Variance(6, 1e-3);
+        graph_.add(
+          gtsam::BetweenFactor<gtsam::Pose3>(
+            body_info.gTb[*stamp_prev],
+            body_info.gTb[stamp_curr],
+            gTb_obs,
+            gTb_cov));
+        initial_values_.insert(body_info.gTb[stamp_curr], gTb_obs);
+      }
+    } else {
+      RCLCPP_WARN_STREAM(this->get_logger(), "Pose state exists for tracker " << tracker_id);
+    }
+    // Use the keu for the current time stamp.
+    gTb = body_info.gTb[stamp_curr];
   }
 
   // Transform sensor to body-frame. We can maybe optimize this at some point in the
   // future to prevent having to this for every angle measurement. Not sure what sort
   // of performance increase it would give us though.
+  auto & t_sensor = tracker_info.t_points[msg.sensor_id];
   auto & bTh = body_info.bTh[tracker_id];
   auto & tTh = tracker_info.tTh;
   auto b_sensor = (bTh * tTh.inverse()).transformFrom(t_sensor);
 
   // Observed angle and error in that angle.
   auto angle_cov = gtsam::noiseModel::Diagonal::Sigmas(gtsam::Vector1(kSigmaAngle));
-
-  // Add a between factor 
   graph_.emplace_shared<gtsam::Gen2LightAngleFactor>(
       lighthouse_info.gTl,                  // lighthouse -> global frame
       *gTb,                                 // body -> global frame
@@ -357,6 +449,11 @@ void PoserComponent::add_angle(const libsurvive_ros2::msg::Angle & msg)
 
 void PoserComponent::add_imu(const sensor_msgs::msg::Imu & msg)
 {
+  // If ignore IMU data is requested, respect this.
+  if (!kUseImuData) {
+    return;
+  }
+
   // Only accept IMU measurements from trackers already inserted into the graph.
   const std::string & tracker_id = msg.header.frame_id;
   if (!id_to_tracker_info_.count(tracker_id)) {
@@ -417,15 +514,22 @@ void PoserComponent::add_imu(const sensor_msgs::msg::Imu & msg)
     // current timestamp. This is possible, but very, very unlikely.
     if (!body_info.gTb.count(stamp_curr)) {
       body_info.gTb[stamp_curr] = next_available_key_++;
-      auto gTb_obs = gtsam::Pose3(
-        gtsam::Rot3::Quaternion(1.0, 0.0, 0.0, 0.0),
-        gtsam::Point3(0.0, 0.0, 0.0));
-      auto gTb_cov = gtsam::noiseModel::Diagonal::Sigmas(
-        gtsam::Vector6(100.0, 100.0, 100.0, 100.0, 100.0, 100.0));
-      graph_.add(
-        gtsam::PriorFactor<gtsam::Pose3>(
-          body_info.gTb[stamp_curr], gTb_obs, gTb_cov));
-      initial_values_.insert(body_info.gTb[stamp_curr], gTb_obs);
+      if (!stamp_prev) {
+        RCLCPP_INFO_STREAM(this->get_logger(),
+          "Adding prior pose for body " << tracker_info.body_id);
+        auto gTb_obs = gtsam::Pose3(
+          gtsam::Rot3::Quaternion(1.0, 0.0, 0.0, 0.0),
+          gtsam::Point3(0.0, 0.0, 0.0));
+        auto gTb_cov = gtsam::noiseModel::Diagonal::Sigmas(
+          gtsam::Vector6(100.0, 100.0, 100.0, 100.0, 100.0, 100.0));
+        graph_.add(
+          gtsam::PriorFactor<gtsam::Pose3>(
+            body_info.gTb[stamp_curr], gTb_obs, gTb_cov));
+        initial_values_.insert(body_info.gTb[stamp_curr], gTb_obs);
+      } else {
+        auto gTb_prev = isam2_.calculateEstimate<gtsam::Pose3>(body_info.gTb[*stamp_prev]);
+        initial_values_.insert(body_info.gTb[stamp_curr], gTb_prev);
+      }
     } else {
       RCLCPP_WARN_STREAM(this->get_logger(), "Pose state exists for tracker " << tracker_id);
     }
@@ -434,13 +538,20 @@ void PoserComponent::add_imu(const sensor_msgs::msg::Imu & msg)
     // current timestamp. This is possible, but very, very unlikely.
     if (!body_info.g_V.count(stamp_curr)) {
       body_info.g_V[stamp_curr] = next_available_key_++;
-      auto g_V_obs = gtsam::Vector3(0.0, 0.0, 0.0);
-      auto g_V_cov = gtsam::noiseModel::Diagonal::Sigmas(
-        gtsam::Vector3(10.0, 10.0, 10.0));
-      graph_.add(
-        gtsam::PriorFactor<gtsam::Vector3>(
-          body_info.g_V[stamp_curr], g_V_obs, g_V_cov));
-      initial_values_.insert(body_info.g_V[stamp_curr], g_V_obs);
+      if (!stamp_prev) {
+        RCLCPP_INFO_STREAM(this->get_logger(),
+          "Adding prior velocity for body " << tracker_info.body_id);
+        auto g_V_obs = gtsam::Vector3(0.0, 0.0, 0.0);
+        auto g_V_cov = gtsam::noiseModel::Diagonal::Sigmas(
+          gtsam::Vector3(10.0, 10.0, 10.0));
+        graph_.add(
+          gtsam::PriorFactor<gtsam::Vector3>(
+            body_info.g_V[stamp_curr], g_V_obs, g_V_cov));
+        initial_values_.insert(body_info.g_V[stamp_curr], g_V_obs);
+      } else {
+        auto g_V_prev = isam2_.calculateEstimate<gtsam::Vector3>(body_info.g_V[*stamp_prev]);
+        initial_values_.insert(body_info.g_V[stamp_curr], g_V_prev);
+      }
     } else {
         RCLCPP_WARN_STREAM(this->get_logger(), "Velocity state exists for tracker " << tracker_id);
     }
@@ -449,26 +560,29 @@ void PoserComponent::add_imu(const sensor_msgs::msg::Imu & msg)
     // tracks its own bias internally.
     if (!tracker_info.b_B.count(stamp_curr)) {
       tracker_info.b_B[stamp_curr] = next_available_key_++;
-      auto b_B_obs = gtsam::imuBias::ConstantBias();
-      auto b_B_cov = gtsam::noiseModel::Diagonal::Sigmas(
-        gtsam::Vector6(
-          kAccelDriftSigma, kAccelDriftSigma, kAccelDriftSigma,
-          kOmegaDriftSigma, kOmegaDriftSigma, kOmegaDriftSigma));
-      graph_.add(
-        gtsam::PriorFactor<gtsam::imuBias::ConstantBias>(
-          tracker_info.b_B[stamp_curr], b_B_obs, b_B_cov));
-      initial_values_.insert(tracker_info.b_B[stamp_curr], b_B_obs);
+      if (!stamp_bias) {
+        RCLCPP_INFO_STREAM(this->get_logger(),
+          "Adding prior bias for tracker " << tracker_id);
+        auto b_B_obs = gtsam::imuBias::ConstantBias();
+        auto b_B_cov = gtsam::noiseModel::Diagonal::Sigmas(
+          gtsam::Vector6(
+            kAccelDriftSigma, kAccelDriftSigma, kAccelDriftSigma,
+            kOmegaDriftSigma, kOmegaDriftSigma, kOmegaDriftSigma));
+        graph_.add(
+          gtsam::PriorFactor<gtsam::imuBias::ConstantBias>(
+            tracker_info.b_B[stamp_curr], b_B_obs, b_B_cov));
+        initial_values_.insert(tracker_info.b_B[stamp_curr], b_B_obs);
+      } else {
+        auto b_B_prev = isam2_.calculateEstimate<gtsam::imuBias::ConstantBias>(
+          tracker_info.b_B[*stamp_bias]);
+        initial_values_.insert(tracker_info.b_B[stamp_curr], b_B_prev);
+      }
     } else {
       RCLCPP_WARN_STREAM(this->get_logger(), "Bias state exists for tracker " << tracker_id);
     }
 
     // Only add between factors for IMU measurements
     if (stamp_prev && stamp_bias) {
-      auto b_B_obs = gtsam::imuBias::ConstantBias();
-      auto b_B_cov = gtsam::noiseModel::Diagonal::Sigmas(
-        gtsam::Vector6(
-          kAccelDriftSigma, kAccelDriftSigma, kAccelDriftSigma,
-          kOmegaDriftSigma, kOmegaDriftSigma, kOmegaDriftSigma));
       graph_.add(
         gtsam::ImuFactor(
           body_info.gTb[*stamp_prev],        // last pose
@@ -477,16 +591,23 @@ void PoserComponent::add_imu(const sensor_msgs::msg::Imu & msg)
           body_info.g_V[stamp_curr],         // last velocity
           tracker_info.b_B[*stamp_bias],     // bias state
           *tracker_info.preintegrator));     // preintegrator
+      auto b_B_obs = gtsam::imuBias::ConstantBias();
+      auto b_B_cov = gtsam::noiseModel::Diagonal::Sigmas(
+        gtsam::Vector6(
+          kAccelDriftSigma, kAccelDriftSigma, kAccelDriftSigma,
+          kOmegaDriftSigma, kOmegaDriftSigma, kOmegaDriftSigma));
       graph_.add(
         gtsam::BetweenFactor<gtsam::imuBias::ConstantBias>(
           tracker_info.b_B[*stamp_bias],
           tracker_info.b_B[stamp_curr],
           b_B_obs,
           b_B_cov));
+      auto b_B_prev = isam2_.calculateEstimate<gtsam::imuBias::ConstantBias>(
+        tracker_info.b_B[*stamp_bias]);
+      tracker_info.preintegrator->resetIntegrationAndSetBias(b_B_prev);
+    } else {
+      tracker_info.preintegrator->resetIntegration();
     }
-
-    // Reset the IMU integrator to reflect that we have a new pre-integration period.
-    tracker_info.preintegrator->resetIntegration();
   }
 }
 
@@ -525,16 +646,45 @@ void PoserComponent::add_tracker(const libsurvive_ros2::msg::Tracker & msg)
   tracker_info.omega_scale = gtsam_from_ros(msg.omega_scale);
   tracker_info.omega_bias = gtsam_from_ros(msg.omega_bias);
 
-  // Fixed transforms.
-  tracker_info.tTi = gtsam_from_ros(msg.tracker_from_imu);
-  tracker_info.tTh = gtsam_from_ros(msg.tracker_from_head);
-
   // Sensor locations and normals.
+  double x = 0.0;
+  double y = 0.0;
+  double n = 0.0;
   for (size_t k = 0; k < msg.channels.size(); k++) {
     const uint8_t channel = msg.channels[k];
     tracker_info.t_points[channel] = gtsam_from_ros(msg.points[k]);
     tracker_info.t_normals[channel] = gtsam_from_ros(msg.normals[k]);
+    switch(channel) {
+    case 0: case 8: case 18:
+      x += msg.points[k].x;
+      y += msg.points[k].y;
+      n += 1.0;
+      break;
+    default:
+      break;
+    }
   }
+  x /= n;
+  y /= n;
+
+  // Transform that moves from the IMU frame to the tracking reference frame, in
+  // which the sensor coordinates are expressed.
+  tracker_info.tTi = gtsam_from_ros(msg.tracker_from_imu);
+
+  // I've looked at some plots in foxglove and the "head" location reported by the
+  // tracker is not nearly where it should be relative to the tracking reference
+  // frame ("light"). I am going to assume the reported "head" to "light" z offset 
+  // is right, but not trust the X, Y or orientation. It seems like the light frame
+  // is related to the head frame by two 90 degree rotations. I'm going to construct
+  // the x and y offset by averaging three equidistant sensors spaced at 120deg to
+  // find the center coordinate and use that as the bolt location. This transform
+  // must be hard-coded somewhere in SteamVR to make things work.
+  auto identity_rotation = gtsam::Rot3::AxisAngle(gtsam::Point3(1.0, 0.0, 0.0), M_PI_2);
+  auto ccw_90deg_about_x = gtsam::Rot3::AxisAngle(gtsam::Point3(1.0, 0.0, 0.0), M_PI_2);
+  auto ccw_90deg_about_y = gtsam::Rot3::AxisAngle(gtsam::Point3(0.0, 1.0, 0.0), M_PI_2);
+  auto ccw_90deg_about_z = gtsam::Rot3::AxisAngle(gtsam::Point3(0.0, 0.0, 1.0), M_PI_2);
+  tracker_info.tTh = gtsam::Pose3(ccw_90deg_about_x * ccw_90deg_about_y,
+    gtsam::Point3(x, y, -0.007));
 
   // The IMU factor needs to know the pose of the IMU sensor in the body frame in
   // order to correct for centripetal and coriolis terms. Calculate this now.
@@ -588,7 +738,7 @@ void PoserComponent::add_lighthouse(const libsurvive_ros2::msg::Lighthouse & msg
   // Weak initial estimate of lighthouse pose
   auto obs_gTl = gtsam::Pose3(
     gtsam::Rot3::Quaternion(1.0, 0.0, 0.0, 0.0),
-    gtsam::Point3(0.0, 0.0, 0.0));
+    gtsam::Point3(0.0, 0.0, -1.0));
   auto cov_gTl = gtsam::noiseModel::Diagonal::Sigmas(
     gtsam::Vector6(100.0, 100.0, 100.0, 10.0, 10.0, 10.0));
 
@@ -622,6 +772,35 @@ void PoserComponent::solution_callback()
       transform_msg.child_frame_id = tracker_id;
       transform_msg.transform = ros_transform_from_gtsam(bTh);
       tf_static_broadcaster_->sendTransform(transform_msg);
+      // If we have info about this tracker, lets send some transforms
+      if (id_to_tracker_info_.count(tracker_id)) {
+        auto & tracker_info = id_to_tracker_info_[tracker_id];
+        transform_msg.header.stamp = now;
+        transform_msg.header.frame_id = tracker_id;
+        transform_msg.child_frame_id = tracker_id + "/light";
+        transform_msg.transform = ros_transform_from_gtsam(tracker_info.tTh.inverse());
+        tf_static_broadcaster_->sendTransform(transform_msg);
+        // Send imu transform -- looks like there 
+        transform_msg.header.stamp = now;
+        transform_msg.header.frame_id = tracker_id + "/light";
+        transform_msg.child_frame_id = tracker_id + "/imu";
+        transform_msg.transform = ros_transform_from_gtsam(tracker_info.tTi);
+        tf_static_broadcaster_->sendTransform(transform_msg);
+        // Send sensor transforms
+        for (const auto& [channel_id, t_point] : tracker_info.t_points) {
+          transform_msg.header.stamp = now;
+          transform_msg.header.frame_id = tracker_id + "/light";
+          transform_msg.child_frame_id = tracker_id + "/" + std::to_string(channel_id);
+          transform_msg.transform.translation.x = t_point.x();
+          transform_msg.transform.translation.y = t_point.y();
+          transform_msg.transform.translation.z = t_point.z();
+          transform_msg.transform.rotation.w = 1.0;
+          transform_msg.transform.rotation.x = 0.0;
+          transform_msg.transform.rotation.y = 0.0;
+          transform_msg.transform.rotation.z = 0.0;
+          tf_static_broadcaster_->sendTransform(transform_msg);
+        }
+      }
     } 
     // Pack up all the timesteps
     auto iter = body_info.gTb.rbegin();
