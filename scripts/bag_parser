@@ -41,6 +41,7 @@ def get_rosbag_options(path, storage_id, serialization_format='cdr'):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-b", "--bag", type=str, required=True, help="the bag file to input")
+    parser.add_argument("-d", "--duration", type=float, required=False, help="number of seconds to read")
     parser.add_argument("-n", "--namespace", default='/libsurvive', help="the bag file to output")
     args = parser.parse_args()
 
@@ -55,10 +56,14 @@ if __name__ == "__main__":
     lighthouses = {}
     bodies = {}
     angles = dict()
-    num = 0
+    start_time = None
     while reader.has_next():
-        num += 1
         (topic, data, time_stamp) = reader.read_next()
+        if args.duration is not None:
+            if start_time is None:
+                start_time = time_stamp
+            elif float(time_stamp - start_time) > args.duration * 1e9:
+                break
         if topic == f"{args.namespace}/lighthouse":
             msg = deserialize_message(data, get_message(type_map[topic]))
             lighthouse_id = str(msg.header.frame_id)

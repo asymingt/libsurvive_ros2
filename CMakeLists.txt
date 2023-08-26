@@ -195,6 +195,7 @@ install(
   PROGRAMS
     scripts/bag_parser
     scripts/config_merger
+    scripts/offline_optimizer
   DESTINATION
     lib/${PROJECT_NAME})
 

@@ -41,9 +41,19 @@ using std::placeholders::_1;
 namespace libsurvive_ros2
 {
 
+// Initial sigmas pn tracker and lighthouse poses.
+const double kTrackerPosSigma = 10.0;
+const double kTrackerRotSigma = 10.0;
+const double kLighthousePosSigma = 10.0;
+const double kLighthouseRotSigma = 10.0;
+const double kDeltaPosSigma = 1e-3;
+const double kDeltaRotSigma = 1e-3;
+
 // IMU integration uncertainties
+const double kUseImuData = false;
 const double kGravity = 9.81;
-const double kDeltaT = 0.004;      // 4ms or 250Hz
+const double kDeltaT = 0.004;
+const double kVelSigma = 1.0;
 const double kAccelSigma = 0.1;
 const double kAccelDriftSigma = 0.1;
 const double kOmegaSigma = 0.1;
@@ -51,9 +61,6 @@ const double kOmegaDriftSigma = 0.1;
 const double kIntegrationSigma = 0.1;
 const double kSensorPositionSigma = 0.0001;
 const double kSigmaAngle = 0.001;
-const double kUseImuData = true;
-
-// Time between bias states
 const Timestamp kImuBiasTimeNs = 1e9;
 
 // Helper functions
@@ -340,34 +347,42 @@ void PoserComponent::add_angle(const libsurvive_ros2::msg::Angle & msg)
     gTb = body_info.gTb[0];
   } else if (kUseImuData) {
     // If the IMU is being used and there is no pose state, we have to wait for one to
-    // be inserted, so it makes more sense to return at this point.
+    // be inserted, so it makes more sense to return at this point that attempt to
+    // include an angle measurement for a state that does not exist.
     gTb = find_key_for_closest_stamp(body_info.gTb, stamp_curr);
-    if (!gTb) {
-      return;
-    }
   } else {
-    // If the IMU is ignored, then we need to insert a state to represent the pose of
-    // body at the current time. But first, let's cover the case where we've received
-    // an angle measurement from this body before.
+    // Multiple angle measurements may be contributing to this body pose estimate
+    // and so we need to make sure that we don't add an extra state for a
+    // second angle measurement sharing a timestamp.
     if (body_info.gTb.count(stamp_curr) == 0) {
+      // If we get here then we need to add a timestamp.
       body_info.gTb[stamp_curr] = next_available_key_++;
       if (!stamp_prev) {
+        // If there was no previous timestamp for this body, it means that this
+        // is the first angle being received. So, we need to add a prior, which
+        // keeps the tracker pose roughly in the right location.
         RCLCPP_INFO_STREAM(this->get_logger(),
           "Adding prior pose for body " << tracker_info.body_id);
         auto gTb_obs = gtsam::Pose3(
           gtsam::Rot3::Quaternion(1.0, 0.0, 0.0, 0.0),
           gtsam::Point3(0.0, 0.0, 0.0));
         auto gTb_cov = gtsam::noiseModel::Diagonal::Sigmas(
-          gtsam::Vector6(100.0, 100.0, 100.0, 100.0, 100.0, 100.0));
-        graph_.add(
-          gtsam::PriorFactor<gtsam::Pose3>(
+          gtsam::Vector6(
+            kTrackerPosSigma, kTrackerPosSigma, kTrackerPosSigma,
+            kTrackerRotSigma, kTrackerRotSigma, kTrackerRotSigma));
+        graph_.add(gtsam::PriorFactor<gtsam::Pose3>(
             body_info.gTb[stamp_curr], gTb_obs, gTb_cov));
         initial_values_.insert(body_info.gTb[stamp_curr], gTb_obs);
       } else {
+        // If there was a previous timestamp, then we need to add a new state and
+        // connect this state to the previous state
         auto gTb_obs = gtsam::Pose3(
           gtsam::Rot3::Quaternion(1.0, 0.0, 0.0, 0.0),
           gtsam::Point3(0.0, 0.0, 0.0));
-        auto gTb_cov = gtsam::noiseModel::Isotropic::Variance(6, 1e-3);
+        auto gTb_cov = gtsam::noiseModel::Diagonal::Sigmas(
+          gtsam::Vector6(
+            kDeltaPosSigma, kDeltaPosSigma, kDeltaPosSigma,
+            kDeltaRotSigma, kDeltaRotSigma, kDeltaRotSigma));
         graph_.add(
           gtsam::BetweenFactor<gtsam::Pose3>(
             body_info.gTb[*stamp_prev],
@@ -379,10 +394,16 @@ void PoserComponent::add_angle(const libsurvive_ros2::msg::Angle & msg)
     } else {
       RCLCPP_WARN_STREAM(this->get_logger(), "Pose state exists for tracker " << tracker_id);
     }
-    // Use the keu for the current time stamp.
+    // Use the key for the current time stamp.
     gTb = body_info.gTb[stamp_curr];
   }
 
+  // In any case where we don't get a gTb key to update, it means that we can't add
+  // this angle measurement. So we should return here to avoid an issue.
+  if (!gTb) {
+    return;
+  }
+  
   // Transform sensor to body-frame. We can maybe optimize this at some point in the
   // future to prevent having to this for every angle measurement. Not sure what sort
   // of performance increase it would give us though.
@@ -467,17 +488,21 @@ void PoserComponent::add_imu(const sensor_msgs::msg::Imu & msg)
     }
 
     // Add a pose state, provided another IMU has not already set one for the
-    // current timestamp. This is possible, but very, very unlikely.
+    // current timestamp. This is possible, but unlikely.
     if (!body_info.gTb.count(stamp_curr)) {
       body_info.gTb[stamp_curr] = next_available_key_++;
       if (!stamp_prev) {
+        // If we get here then this is the first IMU measurement for this body
+        // and so we need to add a position prior to ground the trajectory in
+        // something reasonable.
         RCLCPP_INFO_STREAM(this->get_logger(),
           "Adding prior pose for body " << tracker_info.body_id);
         auto gTb_obs = gtsam::Pose3(
           gtsam::Rot3::Quaternion(1.0, 0.0, 0.0, 0.0),
           gtsam::Point3(0.0, 0.0, 0.0));
-        auto gTb_cov = gtsam::noiseModel::Diagonal::Sigmas(
-          gtsam::Vector6(100.0, 100.0, 100.0, 100.0, 100.0, 100.0));
+        auto gTb_cov = gtsam::noiseModel::Diagonal::Sigmas(gtsam::Vector6(
+            kTrackerPosSigma, kTrackerPosSigma, kTrackerPosSigma,
+            kTrackerRotSigma, kTrackerRotSigma, kTrackerRotSigma));
         graph_.add(
           gtsam::PriorFactor<gtsam::Pose3>(
             body_info.gTb[stamp_curr], gTb_obs, gTb_cov));
@@ -498,10 +523,9 @@ void PoserComponent::add_imu(const sensor_msgs::msg::Imu & msg)
         RCLCPP_INFO_STREAM(this->get_logger(),
           "Adding prior velocity for body " << tracker_info.body_id);
         auto g_V_obs = gtsam::Vector3(0.0, 0.0, 0.0);
-        auto g_V_cov = gtsam::noiseModel::Diagonal::Sigmas(
-          gtsam::Vector3(10.0, 10.0, 10.0));
-        graph_.add(
-          gtsam::PriorFactor<gtsam::Vector3>(
+        auto g_V_cov = gtsam::noiseModel::Diagonal::Sigmas(gtsam::Vector3(
+          kVelSigma, kVelSigma, kVelSigma));
+        graph_.add(gtsam::PriorFactor<gtsam::Vector3>(
             body_info.g_V[stamp_curr], g_V_obs, g_V_cov));
         initial_values_.insert(body_info.g_V[stamp_curr], g_V_obs);
       } else {
@@ -520,12 +544,10 @@ void PoserComponent::add_imu(const sensor_msgs::msg::Imu & msg)
         RCLCPP_INFO_STREAM(this->get_logger(),
           "Adding prior bias for tracker " << tracker_id);
         auto b_B_obs = gtsam::imuBias::ConstantBias();
-        auto b_B_cov = gtsam::noiseModel::Diagonal::Sigmas(
-          gtsam::Vector6(
+        auto b_B_cov = gtsam::noiseModel::Diagonal::Sigmas(gtsam::Vector6(
             kAccelDriftSigma, kAccelDriftSigma, kAccelDriftSigma,
             kOmegaDriftSigma, kOmegaDriftSigma, kOmegaDriftSigma));
-        graph_.add(
-          gtsam::PriorFactor<gtsam::imuBias::ConstantBias>(
+        graph_.add(gtsam::PriorFactor<gtsam::imuBias::ConstantBias>(
             tracker_info.b_B[stamp_curr], b_B_obs, b_B_cov));
         initial_values_.insert(tracker_info.b_B[stamp_curr], b_B_obs);
       } else {
@@ -694,8 +716,9 @@ void PoserComponent::add_lighthouse(const libsurvive_ros2::msg::Lighthouse & msg
   auto obs_lTg = gtsam::Pose3(
     gtsam::Rot3::Quaternion(1.0, 0.0, 0.0, 0.0),
     gtsam::Point3(0.0, 0.0, -1.0));
-  auto cov_lTg = gtsam::noiseModel::Diagonal::Sigmas(
-    gtsam::Vector6(10.0, 10.0, 10.0, 10.0, 10.0, 10.0));
+  auto cov_lTg = gtsam::noiseModel::Diagonal::Sigmas(gtsam::Vector6(
+    kLighthousePosSigma, kLighthousePosSigma, kLighthousePosSigma,
+    kLighthouseRotSigma, kLighthouseRotSigma, kLighthouseRotSigma));
 
   // Allocate a new variable.
   lighthouse_info.lTg = next_available_key_++;

@@ -1319,9 +1319,21 @@ class Gen2LightAngleFactor : public NoiseModelFactor2<Pose3, Pose3> {
 	obj_p.AxisAngleRot[1] = gTb_axis.unitVector().y() * gTb_angle;
 	obj_p.AxisAngleRot[2] = gTb_axis.unitVector().z() * gTb_angle;
 
+	// Predict the angle, given the pose of the body in the sensor frame, the position
+	// of the sensor in the body frame, the pose of the global frame in the lighthouse
+	// frame and the calibration information for this specific lighthouse.
     double predicted_angle = is_y_axis_
         ? gen_reproject_axis_y_gen2_axis_angle(&obj_p, sensor_pt_, &lh_p, &bcal_)
         : gen_reproject_axis_x_gen2_axis_angle(&obj_p, sensor_pt_, &lh_p, &bcal_);
+
+	// The predicted angle can occasionally come out as NaN, so this is a hack to
+	// move it to some value that us 
+	if (std::isnan(predicted_angle)) {
+		predicted_angle = 0;
+	}
+	if (!std::isfinite(predicted_angle)) {
+		predicted_angle = std::clamp(predicted_angle, -1e3, 1e3);
+	}
 
 	/////////////////////////////////////////////////////		
 	// Helps find stray nans 
