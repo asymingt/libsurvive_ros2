@@ -134,7 +134,6 @@ def generate_launch_description():
         ["'xterm -e gdb -ex=r --args' if '", LaunchConfiguration("debug"), "'=='true' else ''"]
     )
 
-
     # Composed pipeline.
     composed_pipeline = GroupAction(
         actions=[
@@ -191,13 +190,22 @@ def generate_launch_description():
                 output="own_log",
                 parameters=driver_parameters,
             ),
+            # Node(
+            #     package="libsurvive_ros2",
+            #     executable="libsurvive_ros2_poser_node",
+            #     name="libsurvive_ros2_poser_node",
+            #     namespace=LaunchConfiguration("namespace"),
+            #     condition=IfCondition(enable_poser),
+            #     prefix=launch_prefix,
+            #     output="own_log",
+            #     parameters=poser_parameters,
+            # ),
             Node(
                 package="libsurvive_ros2",
-                executable="libsurvive_ros2_poser_node",
-                name="libsurvive_ros2_poser_node",
+                executable="libsurvive_ros2_dev_node",
+                name="libsurvive_ros2_dev_node",
                 namespace=LaunchConfiguration("namespace"),
                 condition=IfCondition(enable_poser),
-                prefix=launch_prefix,
                 output="own_log",
                 parameters=poser_parameters,
             ),

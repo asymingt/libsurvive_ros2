@@ -41,4 +41,6 @@ services:
     network_mode: host
     working_dir: /home/ubuntu/ros2_ws
     entrypoint: /home/ubuntu/ros2_ws/entrypoint.sh
-    command: ros2 launch libsurvive_ros2 libsurvive_ros2.launch.py
+    tty: true
+    stdin_open: true
+    command: bash # ros2 launch libsurvive_ros2 libsurvive_ros2.launch.py
