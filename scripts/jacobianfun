@@ -192,33 +192,207 @@ def mech_model(ccwMotorAndLensAndTiltCorrectedAngleAboutY):
     return Matrix([ccwMotorAndLensAndTiltCorrectedAngleAboutY + sin(ccwMotorAndLensAndTiltCorrectedAngleAboutY + gibpha) * gibmag - phase - math.pi / 2.0])
 
 
-# Proj model
-print("--------------")
-Oproj = proj_model(X, Y, Z, 0)
-Sproj = Matrix([X, Y, Z])
-Jproj = Oproj.jacobian(Sproj)
-print("Jproj", simplify(Jproj))
+# # Proj model
+# print("--------------")
+# Oproj = proj_model(X, Y, Z, 0)
+# Sproj = Matrix([X, Y, Z])
+# Jproj = Oproj.jacobian(Sproj)
+# print("Jproj", simplify(Jproj))
 
-# Lens model
-print("--------------")
-Olens = lens_model(ccwAngleAboutY, A_over_B, Y_over_R, A_over_R, R_over_C)
-Slens = Matrix([ccwAngleAboutY, A_over_B, Y_over_R, A_over_R, R_over_C])
-Jlens = Olens.jacobian(Slens)
-print("Jlens", Jlens)
+# # Lens model
+# print("--------------")
+# Olens = lens_model(ccwAngleAboutY, A_over_B, Y_over_R, A_over_R, R_over_C)
+# Slens = Matrix([ccwAngleAboutY, A_over_B, Y_over_R, A_over_R, R_over_C])
+# Jlens = Olens.jacobian(Slens)
+# print("Jlens", Jlens)
 
-# Dist model
-print("--------------")
-Odist = lens_model(ccwAngleAboutY, A_over_B, Y_over_R, A_over_R, R_over_C)
-Sdist = Matrix([ccwAngleAboutY, A_over_B, Y_over_R, A_over_R, R_over_C])
-Jdist = Odist.jacobian(Slens)
-print("Jdist", Jdist)
+# # Dist model
+# print("--------------")
+# Odist = lens_model(ccwAngleAboutY, A_over_B, Y_over_R, A_over_R, R_over_C)
+# Sdist = Matrix([ccwAngleAboutY, A_over_B, Y_over_R, A_over_R, R_over_C])
+# Jdist = Odist.jacobian(Slens)
+# print("Jdist", Jdist)
 
-# Mech model
-print("--------------")
-Omech = mech_model(ccwMotorAndLensAndTiltCorrectedAngleAboutY)
-Smech = Matrix([ccwMotorAndLensAndTiltCorrectedAngleAboutY])
-Jmech = Omech.jacobian(Smech)
-print("Jmech", simplify(Jmech))
+# # Mech model
+# print("--------------")
+# Omech = mech_model(ccwMotorAndLensAndTiltCorrectedAngleAboutY)
+# Smech = Matrix([ccwMotorAndLensAndTiltCorrectedAngleAboutY])
+# Jmech = Omech.jacobian(Smech)
+# print("Jmech", simplify(Jmech))
+
+import numpy as np
+
+def calc_gen2_err(X, Y, Z, plane, cal, obs):
+    """Reprojection function for predicting an angle from sensor pose in lighthouse frame"""
+
+    # Angle in the X-Z plane (about the +Y axis) sweeping counter-clockwise from +X.
+    # Note that we do a sign inversion on Z here to convert to a left-hand system,
+    # which is the convention adopted by the projection model.
+    ccwAngleAboutY = np.arctan2(-Z, X)
+    ccwAngleAboutX = np.arctan2(-Z, Y)
+
+    # We know from the Vive documentation that the HFOV is 150 degrees and the VFOV is
+    # 110 degrees. It turns out that beyond this region results in numerical instability,
+    # so the best thing to do is try and steer the numerical solver closer to a solution.
+    # This basically nudges the solver towards the base station frustrum
+
+    if ccwAngleAboutY < np.radians(15) or ccwAngleAboutY > np.radians(165):
+        return np.abs(ccwAngleAboutY - np.radians(90))
+    if ccwAngleAboutX < np.radians(35) or ccwAngleAboutX > np.radians(145):
+        return np.abs(ccwAngleAboutX - np.radians(90))
+
+    # Distances between sensor and origin
+    B = np.sqrt(X * X + Z * Z)           # L2 norm of (sensor - origin) in X-Z plane
+    C = np.sqrt(X * X + Y * Y + Z * Z)   # L2 norm of (sensor - origin)
+
+    # Tilt angle of the laser plane with respect to motor shaft, nominally 30 degrees
+    planeTiltAngle = cal["tilt"] + (-1 if plane else 1) * np.pi / 6.
+
+    # CORRECTIONS FOR THE TILTED LASET PLANE
+
+    # Viewed from any direction around the lighthouse:
+    #------------------------------------------------
+    # The moment the laser plane strikes the sensing element (@). THe optical axis runs
+    # from the sensor to the midpoint of the lens.
+    #
+    #          +Y
+    #  (@)__A__|
+    #    \     |       Angle * = "planeTiltAngle"
+    #     \    |       
+    #   R  \   |       Y/R = sin(*)  "how much do I move along A as I move along R"
+    #       \  |       A/R = cos(*)  "how much do I move along Y as I move along R"
+    #        \*|       A/Y = tan(*)  "how much do I move along A as I move along Y"
+    #         \|
+    #  +W <----+ <------------ this is the optical axis of the laser  
+    #          | \
+    #          |  \  <-------- laser plane
+    #          |   \
+    #
+    A_over_R = np.sin(planeTiltAngle)
+    Y_over_R = np.cos(planeTiltAngle)
+    A_over_Y = np.tan(planeTiltAngle)
+
+    # For a given Y coordinate, work out how much we'd need to be along A. Intuitively, A is the
+    # distance from the Y axis introduced by the fact that the plane is tilted with respect to Y. 
+    A = A_over_Y * Y
+
+    # Viewed from above the lighthouse:
+    # ---------------------------------
+    # Now that we know how far along A we've moved we can calculate the small angle error (*) as
+    # A / B = sin(#). Intuitively, this is the delta to the sweep angle that corrects for the
+    # plane tilt. In an ideal setting without fabrication errors, we could return the measurement
+    # here as ccwAngleAboutY + np.sin(A / B) and we'd be done! 
+    #
+    #                           +X
+    #                            |
+    #                            |
+    #                     (@)    |       B = np.sqrt(X * X + Z * Z)
+    #                  A, ' \    |       
+    #                 , ` 90 \ B |       A/B = sin(#) "sweep angle error added by tilt"
+    #             +W ',       \  |       
+    #                   '.,    \*|      
+    #                      '-,# \|
+    #   +Z <---------------------+ optical center
+    A_over_B = A / B
+
+    # For convenience, let's create a new value here to capture the tilt-compensated angle
+    tiltCorrectedCcwAngleAboutY = ccwAngleAboutY - np.arcsin(A_over_B) 
+
+    # CORRECTIONS FOR LENS ERRORS
+
+    # R is the distance from the sensor to the optical axis in the X-W plane, which is a
+    # frame that continually rotates about the lighthouse
+    R = Y / Y_over_R 
+
+    # A laser plane is interesting because unlike typical lens correction, which happens in
+    # a 2D image plane, this happens in 1D. So all that matters is deviation from the optical
+    # axis in 1D within the laser plane -- the further you move from the optical axis in the
+    # laser's plane, the more lens distortion you'd suffer. One neat thing about the 1D nature
+    # of the problem is that you need not model distortion as euclidean distance from the
+    # optical axis; you can just model it directly on the angle from the optical axis, which
+    # is proportional to the horizontal distance moved away from the optical axis :)
+    #
+    #                                (@)  sin(*) = R / C
+    #                                /|        "how much we've deviated from the optical axis"
+    #                            C  / |
+    #                              /  |  R
+    #                             / * |
+    #            optical center  +--------------> +W laser optical axis
+    #
+    angleFromOpticalCenterOfLens = np.arcsin(R / C)
+
+    # I don't exactly understand what this error is about, but it looks to be very similar to
+    # the mechanical error model. This suggests that there is some periodic component to the
+    # lens curvature that is a function of the motor spinning. My only guess is that the lens
+    # warps slightly as it rotates because of centripetal forces, and this correct for that.
+    #
+    #    x' = x + a sin (x + b)
+    #         |   +-----+-----+ 
+    #         +         |         
+    #   curve at zero   | 
+    #                   | 
+    #                   + 
+    #          Fourier correction
+    centripetalCompensatedBaseCurvature = cal["curve"] + cal["ogeemag"] * np.sin(
+        tiltCorrectedCcwAngleAboutY + cal["ogeephase"])
+    
+    # This is a 5th order polynomial expression that corrects for lens distortion, but in stead
+    # of describing an error in distance from optical axis, it describes an error as a multiple
+    # of the base curvature of the lens. Something like final_curvature = f(x) * base_curvature.
+    # The polynomial function looks something like the graph below. Domain is [-pi/2, +pi/2].
+    # 
+    #       |      4|        | f(x) = a[0]x^5 + a[1]x^4 + a[2]x^3 + a[3]x^2 + a[4]x^1 + a[5]
+    #        \      |       /
+    #         \    2|      /
+    #          `-.__|__.-'
+    #---------------+-------------> +x
+    #        -pi -2 0 +2 +pi
+    #
+    a = [-8.0108022e-06, 0.0028679863, 5.3685255000000001e-06, 0.0076069798000000001,  0,     0]
+    d = 0           # this ends up being f'(x)
+    b = a[0]        # this ends up being f(x)
+    for i in range(1, 6):
+        d = d * angleFromOpticalCenterOfLens + b
+        b = b * angleFromOpticalCenterOfLens + a[i]
+
+    # To make this easier, lets just multiply to get the curvature and its first derivative.
+    lensCurvature = b * centripetalCompensatedBaseCurvature
+    lensCurvatureFirstDerivative = d * centripetalCompensatedBaseCurvature
+
+    # Here is where we put all the lens correction terms together.
+    #
+    #                 A                   lensCurvature
+    #       asin (    -  +  ---------------------------------------------    )
+    #                 B      Y / R - lensCurvatureFirstDerivative * A / R
+    #
+    # The dividend represents the deviation along A, which if course depends on how far you
+    # have shifted from the laser optical axis. The divisor itself must also shift by a
+    # proportional amount.
+    #
+    ccwLensCorrectedAngleAboutY = ccwAngleAboutY - np.arcsin(
+        A_over_B + lensCurvature / (Y_over_R - lensCurvatureFirstDerivative * A_over_R))
+
+    # CORRECTIONS FOR MECHANICAL ERRORS
+
+    # Now that we have a tilt and lens-corrected angle we have to shift it by a small amount to
+    # compensate for mechanical vibration and lens mounting errors. We use a fourier term here
+    # that captures periodic error. In other words this error term repeats every 2pi, or one
+    # rotation about Y. Ultimately, it models the fact that the trajectory taken by the lens on
+    # an imperfect, imbalanced motorized system deviates from a perfect circle.
+    #
+    #    x' = x + a sin (x + b) - c
+    #         |   +-----+-----+   |
+    #         +         |         +--- Phase offset from zero. This is always 0 for axis = 0
+    #     raw angle     |              because that axis defines the start of the sweep. Axis
+    #                   |              1 has a small fabrication error around the motor spindle
+    #                   +              that phase advances or delays with respect to X, and this
+    #          Fourier correction      term corrects for that.
+    #
+    ccwMotorAndLensAndTiltCorrectedAngleAboutY = ccwLensCorrectedAngleAboutY + np.sin(
+        ccwLensCorrectedAngleAboutY + cal["gibpha"]) * cal["gibmag"] - cal["phase"]
+
+    # Shift the angle clockwise 90 degree to be described with respect to +Z, and not +X.
+    return np.abs(ccwMotorAndLensAndTiltCorrectedAngleAboutY - np.pi / 2.0 - obs)
 
 # subs = {
 #     X: 0.1,
