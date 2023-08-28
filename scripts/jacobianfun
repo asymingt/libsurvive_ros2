@@ -462,3 +462,64 @@ print(J)
 # J = observation.jacobian(state)
 
 # print(J)
+
+
+# sensor_pt = pt.transform(pose, trackers[tracker_id][sensor_id]["point"])
+# weights[i] += calc_gen2_error_corr(
+#     sensor_pt[0],
+#     sensor_pt[1],
+#     -sensor_pt[2],
+#     plane_id,
+#     lighthouses[channel_id][plane_id],
+#     meas_angle)
+## Run particle filter
+# Nparticles = 1000
+# Nrefresh = 0
+# Niteration = 10
+# init_mean = pt.transform_from(R=np.eye(3), p=np.array([0.0, 0.0, 0.0]))
+# init_cov = np.diag([36.0, 36.0, 36.0, 0.1, 0.1, 0.1])
+# inno_mean = pt.transform_from(R=np.eye(3), p=np.array([0.0, 0.0, 0.0]))
+# inno_cov = 1.0e-3 * np.diag(np.ones(6))
+# rng = np.random.default_rng(0)
+# particles = np.array([
+#     pt.random_transform(rng=rng, mean=init_mean, cov=init_cov) for _ in range(Nparticles)])
+# weights = np.zeros(Nparticles)
+# for iter in range(Niteration):
+#     for i, pose in enumerate(particles):
+#         weights[i] = 0
+#         for data in bundle:
+#             sensor_id = data["sensor"]
+#             plane_id = data["plane"]
+#             meas_angle = data["angle"]
+#             sensor_pt = pt.transform(pose, trackers[tracker_id][sensor_id]["point"])
+#             weights[i] += calc_gen2_error_corr(
+#                 sensor_pt[0],
+#                 sensor_pt[1],
+#                 -sensor_pt[2],
+#                 plane_id,
+#                 lighthouses[channel_id][plane_id],
+#                 meas_angle)
+#     print(f"++ Best cost at {iter} is", np.min(weights))
+#     weights = np.reciprocal(weights)
+#     weights /= np.sum(weights)
+#     weights = np.cumsum(weights)
+#     probs = np.random.random(size=Nparticles)
+#     particles = np.array([
+#         pt.concat(
+#             pt.random_transform(rng=rng, mean=inno_mean, cov=inno_cov),
+#                 particles[np.argmax(weights > prob)]) for prob in probs])
+#     if Nrefresh > 0:
+#         particles[0:Nrefresh] = np.array([
+#             pt.random_transform(rng=rng, mean=init_mean, cov=init_cov)
+#                 for _ in range(Nrefresh)])
+# pos = np.zeros((Nparticles, 3))
+# rot = np.zeros((Nparticles, 4))
+# for i in range(Nparticles):
+#     pos[i, :] = pt.pq_from_transform(particles[i])[0:3]
+#     rot[i, :] = pt.pq_from_transform(particles[i])[3:7]
+# pos_mean = np.average(pos, weights=weights, axis=0)
+# pos_var  = np.average((pos - pos_mean)**2, weights=weights, axis=0)
+# rot_mean = np.average(rot, weights=weights, axis=0)
+# rot_var  = np.average((rot - rot_mean)**2, weights=weights, axis=0)
+# print("pos", pos_mean, np.sqrt(pos_var))
+# print("rot", rot_mean, np.sqrt(rot_var))
