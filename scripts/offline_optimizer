@@ -1,0 +1,275 @@
+#!/usr/bin/env python3
+#
+# Copyright 2023 Andrew Symington
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+
+import argparse
+import numpy as np
+import yaml
+
+
+import gtsam
+from gtsam.symbol_shorthand import L, X
+import gtsam.utils.plot as gtsam_plot
+import matplotlib.pyplot as plt
+
+import rosbag2_py
+from rclpy.serialization import deserialize_message
+from rclpy.time import Time 
+from rosidl_runtime_py.utilities import get_message
+
+def get_rosbag_options(path, storage_id, serialization_format='cdr'):
+    """Get the storage and converter options for a fiven rosbag"""
+    storage_options = rosbag2_py.StorageOptions(
+        uri=path, storage_id=storage_id)
+    converter_options = rosbag2_py.ConverterOptions(
+        input_serialization_format=serialization_format,
+        output_serialization_format=serialization_format)
+    return storage_options, converter_options
+
+
+def get_all_lighthouses(reader, namespace, duration):
+    """Extract all lighthouses from a bag, up to some duration"""
+    topic = f"{namespace}/lighthouse"
+    reader.reset_filter()
+    reader.set_filter(rosbag2_py.StorageFilter(topics=[topic]))
+    reader.seek(0)
+    lighthouses = {}
+    start_time = None
+    while reader.has_next():
+        (topic, data, time_stamp) = reader.read_next()
+        if duration is not None:
+            if start_time is None:
+                start_time = time_stamp
+            elif float(time_stamp - start_time) > duration * 1e9:
+                break        
+        msg = deserialize_message(data, get_message('libsurvive_ros2/msg/Lighthouse'))
+        lighthouse_id = str(msg.header.frame_id)
+        if lighthouse_id != "LHB-0":
+            lighthouses[msg.channel] = {
+                "id" : lighthouse_id,
+                "channel" : int(msg.channel),
+                "fcalphase" : [float(msg.fcalphase[0]), float(msg.fcalphase[1])],
+                "fcaltilt" : [float(msg.fcaltilt[0]), float(msg.fcaltilt[1])],
+                "fcalcurve" : [float(msg.fcalcurve[0]), float(msg.fcalcurve[1])],
+                "fcalgibpha" : [float(msg.fcalgibpha[0]), float(msg.fcalgibpha[1])],
+                "fcalgibmag" : [float(msg.fcalgibmag[0]), float(msg.fcalgibmag[1])],
+                "fcalogeephase" : [float(msg.fcalogeephase[0]), float(msg.fcalogeephase[1])],
+                "fcalogeemag" : [float(msg.fcalogeemag[0]), float(msg.fcalogeemag[1])],
+            }
+    return lighthouses
+
+def get_all_trackers(reader, namespace, duration):
+    """Extract all trackers from a bag, up to some duration"""
+    topic = f"{namespace}/tracker"
+    reader.reset_filter()
+    reader.set_filter(rosbag2_py.StorageFilter(topics=[topic]))
+    reader.seek(0)
+    trackers = {}
+    start_time = None
+    while reader.has_next():
+        (topic, data, time_stamp) = reader.read_next()
+        if duration is not None:
+            if start_time is None:
+                start_time = time_stamp
+            elif float(time_stamp - start_time) > duration * 1e9:
+                break        
+        msg = deserialize_message(data, get_message('libsurvive_ros2/msg/Tracker'))
+        tracker_id = str(msg.header.frame_id)
+        if tracker_id != "LHR-0":
+            trackers[tracker_id] = {
+                "id" : tracker_id,
+            }
+    return trackers
+
+def get_all_angles(reader, namespace, duration):
+    """Extract all trackers from a bag, up to some duration"""
+    topic = f"{namespace}/angle"
+    reader.reset_filter()
+    reader.set_filter(rosbag2_py.StorageFilter(topics=[topic]))
+    reader.seek(0)
+    angles = {} 
+    start_time = None
+    step = 0
+    while reader.has_next():
+        (topic, data, time_stamp) = reader.read_next()
+        if duration is not None:
+            if start_time is None:
+                start_time = time_stamp
+            elif float(time_stamp - start_time) > duration * 1e9:
+                break        
+        msg = deserialize_message(data, get_message('libsurvive_ros2/msg/Angle'))
+        #stamp_ns = int(Time.from_msg(msg.header.stamp).nanoseconds)
+        angles[int(step)] = {
+            "tracker": msg.header.frame_id,
+            "sensor": msg.sensor_id,
+            "channel": msg.channel,
+            "plane": msg.plane,
+            "angle": msg.angle
+        }
+        step += 1
+    return angles
+
+
+def calc_cal_series(s):
+    f = [-8.0108022e-06, 0.0028679863, 5.3685255000000001e-06, 0.0076069798000000001, 0, 0]
+    m = f[0]
+    a = 0
+    for i in range(0, 6):
+        a = a * s + m
+        m = m * s + f[i]
+    return m, a
+
+def reproject_axis_gen2(X, Y, Z, axis, cal):
+    B = np.atan2(Z, X)
+    Ydeg = cal["tilt"] + (-1 if axis else 1) * np.pi / 6.
+    tanA = np.tan(Ydeg)
+    normXZ = np.sqrt(X * X + Z * Z)
+    asinArg = tanA * Y / normXZ
+    sinYdeg = np.sin(Ydeg)
+    cosYdeg = np.cos(Ydeg)
+    sinPart = np.sin(B - np.asin(asinArg) + cal["ogeephase"]) * cal["ogeemag"]
+    normXYZ = np.sqrt(X * X + Y * Y + Z * Z)
+    modAsinArg = Y / normXYZ / cosYdeg
+    asinOut = np.asin(modAsinArg)
+    mod, acc = calc_cal_series(asinOut)
+    BcalCurved = sinPart + cal.curve
+    asinArg2 = asinArg + mod * BcalCurved / (cosYdeg - acc * BcalCurved * sinYdeg)
+    asinOut2 = np.asin(asinArg2)
+    sinOut2 = np.sin(B - asinOut2 + cal["gibpha"])
+    return B - asinOut2 + sinOut2 * cal["gibmag"] - cal["phase"] - np.pi / 2.
+
+
+
+def error_light(
+    measurement: np.ndarray,
+    this: gtsam.CustomFactor,
+    values: gtsam.Values,
+    jacobians: Optional[List[np.ndarray]]) -> float:
+    
+    key1 = this.keys()[0]
+    key2 = this.keys()[1]
+    lTg, gTt = values.atVector(key1), values.atVector(key2)
+    l_sensor = s
+
+    error = (pos2 - pos1) - measurement
+    if jacobians is not None:
+        jacobians[0] = -I
+        jacobians[1] = I
+
+    return error
+
+
+# lTg x gTt x sensor_t
+#        return apply_pose_to_pt(lh_p, apply_pose_to_pt(obj_p, sensor_pt))
+
+def reproject_axis_x_gen2(obj_p, sensor_pt, lh_p, bsc0):
+    XYZ = sensor_to_world(obj_p, sensor_pt, lh_p)
+    return reproject_axis_gen2(XYZ[0], XYZ[1], -XYZ[2], 0, bsc0)
+
+def reproject_axis_y_gen2(obj_p, sensor_pt, lh_p, bsc1):
+    XYZ = sensor_to_world(obj_p, sensor_pt, lh_p)
+    return reproject_axis_gen2(XYZ[0], XYZ[1], -XYZ[2], 1, bsc1)
+
+def plot_result(lighthouses, trackers, result):
+    fignum = 0
+    fig = plt.figure(fignum)
+    if not fig.axes:
+        axes = fig.add_subplot(projection='3d')
+    else:
+        axes = fig.axes[0]
+    plt.cla()
+
+    gtsam_plot.plot_trajectory(fignum, result, title="Vive solution")
+
+    # Plot points
+    #gtsam_plot.plot_3d_points(fignum, result, 'rx')
+
+    # Plot lighthouses
+    #for channel, lighthouse_info in lighthouses.items():
+    #    gtsam_plot.plot_pose3(fignum, result.atPose3(L(channel)), 10)
+
+
+    # i = 0
+    # while result.exists(L(i)):
+    #     pose_i = result.atPose3(X(i))
+    #     gtsam_plot.plot_pose3(fignum, pose_i, 10)
+    #     i += 1
+
+    # draw
+    #axes.set_xlim3d(-40, 40)
+    #axes.set_ylim3d(-40, 40)
+    #axes.set_zlim3d(-40, 40)
+    plt.pause(10)
+
+if __name__ == "__main__":
+
+    # Handle arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-b", "--bag", type=str, required=True, help="the bag file to input")
+    parser.add_argument("-d", "--duration", type=float, required=False, help="number of seconds to read")
+    parser.add_argument("-n", "--namespace", default='/libsurvive', help="the bag file to output")
+    args = parser.parse_args()
+
+    storage_options, converter_options = get_rosbag_options(args.bag, 'mcap')
+    reader = rosbag2_py.SequentialReader()
+    reader.open(storage_options, converter_options)
+
+    # Read all measurements
+    lighthouses = get_all_lighthouses(reader, args.namespace, args.duration)
+    trackers = get_all_trackers(reader, args.namespace, args.duration)
+    angles = get_all_angles(reader, args.namespace, args.duration)
+
+    # Construct graph
+    graph = gtsam.NonlinearFactorGraph()
+    initial_estimate = gtsam.Values()
+
+    # Add lighthouse states (static)
+    for channel, lighthouse_info in lighthouses.items():
+        initial_est = gtsam.Pose3(gtsam.Rot3.Rodrigues(0.0, 0.0, 0.0), gtsam.Point3(1, 1, 1))
+        initial_cov = gtsam.noiseModel.Isotropic.Sigma(6, 10)
+        initial_estimate.insert(L(channel), initial_est)
+        graph.push_back(gtsam.PriorFactorPose3(L(channel), initial_est, initial_cov))
+
+    # Add tracker states
+    stamps = {}
+    for stamp_curr, angle_info in angles.items():
+        tracker_id = angle_info.get("tracker", None)
+        if tracker_id == 'LHR-160BA755':
+            initial_est = gtsam.Pose3(gtsam.Rot3.Rodrigues(0.0, 0.0, 0.0), gtsam.Point3(0, 0, 1))
+            if tracker_id not in stamps.keys():
+                initial_cov = gtsam.noiseModel.Isotropic.Sigma(6, 10)
+                graph.push_back(gtsam.PriorFactorPose3(X(stamp_curr), initial_est, initial_cov))
+            else:
+                stamp_prev = stamps[tracker_id]
+                delta_est = gtsam.Pose3(gtsam.Rot3.Rodrigues(0.0, 0.0, 0.0), gtsam.Point3(0, 0, 1))
+                delta_cov = gtsam.noiseModel.Isotropic.Sigma(6, 0.01)
+                graph.add(gtsam.BetweenFactorPose3(X(stamp_prev), X(stamp_curr), delta_est, delta_cov))
+            initial_estimate.insert(X(stamp_curr), initial_est)
+            stamps[tracker_id] = stamp_curr
+
+    # Solve optimization problem
+    params = gtsam.LevenbergMarquardtParams()
+    optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initial_estimate, params)
+    result = optimizer.optimize()
+    plot_result(lighthouses, trackers, result)
+
+    # Print final result
+    #print("\nFinal Result:\n{}".format(optimizer_result))

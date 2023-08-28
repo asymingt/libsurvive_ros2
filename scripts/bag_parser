@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+#
+# Copyright 2023 Andrew Symington
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+
+import argparse
+import yaml
+
+import rosbag2_py
+from rclpy.serialization import deserialize_message
+from rclpy.time import Time 
+from rosidl_runtime_py.utilities import get_message
+
+def get_rosbag_options(path, storage_id, serialization_format='cdr'):
+    """Get the storage and converter options for a fiven rosbag"""
+    storage_options = rosbag2_py.StorageOptions(
+        uri=path, storage_id=storage_id)
+    converter_options = rosbag2_py.ConverterOptions(
+        input_serialization_format=serialization_format,
+        output_serialization_format=serialization_format)
+    return storage_options, converter_options
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-b", "--bag", type=str, required=True, help="the bag file to input")
+    parser.add_argument("-d", "--duration", type=float, required=False, help="number of seconds to read")
+    parser.add_argument("-n", "--namespace", default='/libsurvive', help="the bag file to output")
+    args = parser.parse_args()
+
+    storage_options, converter_options = get_rosbag_options(args.bag, 'mcap')
+    reader = rosbag2_py.SequentialReader()
+    reader.open(storage_options, converter_options)
+
+    type_map = {}
+    for topic_metadata in reader.get_all_topics_and_types():
+        type_map[topic_metadata.name] = topic_metadata.type
+
+    lighthouses = {}
+    bodies = {}
+    angles = dict()
+    start_time = None
+    while reader.has_next():
+        (topic, data, time_stamp) = reader.read_next()
+        if args.duration is not None:
+            if start_time is None:
+                start_time = time_stamp
+            elif float(time_stamp - start_time) > args.duration * 1e9:
+                break
+        if topic == f"{args.namespace}/lighthouse":
+            msg = deserialize_message(data, get_message(type_map[topic]))
+            lighthouse_id = str(msg.header.frame_id)
+            # Bug in low-level driver...
+            if lighthouse_id != "LHB-0":
+                lighthouses[lighthouse_id] = {
+                    "lighthouse_id" : lighthouse_id,
+                    "channel" : int(msg.channel),
+                    "fcalphase" : [float(msg.fcalphase[0]), float(msg.fcalphase[1])],
+                    "fcaltilt" : [float(msg.fcaltilt[0]), float(msg.fcaltilt[1])],
+                    "fcalcurve" : [float(msg.fcalcurve[0]), float(msg.fcalcurve[1])],
+                    "fcalgibpha" : [float(msg.fcalgibpha[0]), float(msg.fcalgibpha[1])],
+                    "fcalgibmag" : [float(msg.fcalgibmag[0]), float(msg.fcalgibmag[1])],
+                    "fcalogeephase" : [float(msg.fcalogeephase[0]), float(msg.fcalogeephase[1])],
+                    "fcalogeemag" : [float(msg.fcalogeemag[0]), float(msg.fcalogeemag[1])],
+                }
+        if topic == f"{args.namespace}/tracker":
+            msg = deserialize_message(data, get_message(type_map[topic]))
+            tracker_id = str(msg.header.frame_id)
+            bodies[tracker_id] = {
+                "body_id" : f"rigid_body/{tracker_id}",
+                "trackers" : [
+                    {
+                        "tracker_id" : tracker_id,
+                        "bTh" : [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                    }
+                ]
+            }
+        
+        if topic == f"{args.namespace}/angle":
+            msg = deserialize_message(data, get_message(type_map[topic]))
+            if msg.header.frame_id not in angles.keys():
+                angles[msg.header.frame_id] = dict()
+            if msg.channel not in angles[msg.header.frame_id].keys():
+                angles[msg.header.frame_id][msg.channel] = 0
+            angles[msg.header.frame_id][msg.channel] += 1
+    yaml_bodies = yaml.dump(list(bodies.values()), default_flow_style=None)
+    print("Bodies:")
+    print(yaml_bodies)
+    yaml_lighthouses = yaml.dump(list(lighthouses.values()), default_flow_style=None)
+    print("Lighthouses:")
+    print(yaml_lighthouses)
+    print("Angles:", angles)
+    del reader

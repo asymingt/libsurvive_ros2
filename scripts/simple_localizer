@@ -1,0 +1,488 @@
+#!/usr/bin/env python3
+#
+# Copyright 2023 Andrew Symington
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+
+import argparse
+import numpy as np
+import time
+import pytransform3d.transformations as pt
+
+import rosbag2_py
+from rclpy.serialization import deserialize_message
+from rclpy.time import Time 
+from rosidl_runtime_py.utilities import get_message
+
+from functools import partial
+from typing import List, Optional
+import gtsam
+
+from sympy import atan2, asin, sin, cos, tan, pi, sqrt, Matrix, Symbol
+from sympy.abc import X, Y, Z
+from sympy.utilities.lambdify import lambdify
+
+## DATA HANDLERS
+
+def get_rosbag_options(path, storage_id, serialization_format='cdr'):
+    """Get the storage and converter options for a fiven rosbag"""
+    storage_options = rosbag2_py.StorageOptions(
+        uri=path, storage_id=storage_id)
+    converter_options = rosbag2_py.ConverterOptions(
+        input_serialization_format=serialization_format,
+        output_serialization_format=serialization_format)
+    return storage_options, converter_options
+
+
+def get_all_lighthouses(reader, namespace, duration):
+    """Extract all lighthouses from a bag, up to some duration"""
+    topic = f"{namespace}/lighthouse"
+    reader.reset_filter()
+    reader.set_filter(rosbag2_py.StorageFilter(topics=[topic]))
+    reader.seek(0)
+    lighthouses = {}
+    start_time = None
+    while reader.has_next():
+        (topic, data, time_stamp) = reader.read_next()
+        if duration is not None:
+            if start_time is None:
+                start_time = time_stamp
+            elif float(time_stamp - start_time) > duration * 1e9:
+                break        
+        msg = deserialize_message(data, get_message('libsurvive_ros2/msg/Lighthouse'))
+        lighthouse_id = str(msg.header.frame_id)
+        if lighthouse_id != "LHB-0":
+            lighthouses[msg.channel] = {
+                "id" : lighthouse_id,
+                "channel" : int(msg.channel),
+                "calibration": {}
+            }
+            for axis in [0, 1]:
+                lighthouses[msg.channel][axis] = {       
+                    "phase" : float(msg.fcalphase[axis]),
+                    "tilt" : float(msg.fcaltilt[axis]),
+                    "curve" : float(msg.fcalcurve[axis]),
+                    "gibpha" : float(msg.fcalgibpha[axis]),
+                    "gibmag" : float(msg.fcalgibmag[axis]),
+                    "ogeephase" : float(msg.fcalogeephase[axis]),
+                    "ogeemag" : float(msg.fcalogeemag[axis]),
+                }
+    return lighthouses
+
+def get_all_trackers(reader, namespace, duration):
+    """Extract all trackers from a bag, up to some duration"""
+    topic = f"{namespace}/tracker"
+    reader.reset_filter()
+    reader.set_filter(rosbag2_py.StorageFilter(topics=[topic]))
+    reader.seek(0)
+    trackers = {}
+    start_time = None
+    while reader.has_next():
+        (topic, data, time_stamp) = reader.read_next()
+        if duration is not None:
+            if start_time is None:
+                start_time = time_stamp
+            elif float(time_stamp - start_time) > duration * 1e9:
+                break        
+        msg = deserialize_message(data, get_message('libsurvive_ros2/msg/Tracker'))
+        tracker_id = str(msg.header.frame_id)
+        if tracker_id != "LHR-0":
+            trackers[tracker_id] = {}
+            for channel, point, normal in zip(msg.channels, msg.points, msg.normals):
+                trackers[tracker_id][channel] = {
+                    "point" : np.array([point.x, point.y, point.z]),
+                    "normal" : np.array([normal.x, normal.y, normal.z]),
+                }
+    return trackers
+
+def get_all_light_bundles(reader, namespace, duration):
+    """Extract all trackers from a bag, up to some duration"""
+    topic = f"{namespace}/angle"
+    reader.reset_filter()
+    reader.set_filter(rosbag2_py.StorageFilter(topics=[topic]))
+    reader.seek(0)
+    start_time = None
+    bundles = {}
+    while reader.has_next():
+        (topic, data, time_stamp) = reader.read_next()
+        if duration is not None:
+            if start_time is None:
+                start_time = time_stamp
+            elif float(time_stamp - start_time) > duration * 1e9:
+                break        
+        msg = deserialize_message(data, get_message('libsurvive_ros2/msg/Angle'))
+        tracker_id = str(msg.header.frame_id)
+        if tracker_id == "LHR-0":
+            continue
+        this_stamp = int(Time.from_msg(msg.header.stamp).nanoseconds)
+        if tracker_id in bundles.keys() and msg.channel in bundles[tracker_id].keys():
+            bund_stamp = max(bundles[tracker_id][msg.channel].keys())
+            if bund_stamp is not None and this_stamp - bund_stamp > 20e6:
+                bund_stamp = this_stamp
+                bundles[tracker_id][msg.channel][this_stamp] = []
+        elif tracker_id in bundles.keys():
+            bundles[tracker_id][msg.channel] = {
+                this_stamp: []
+            }
+            bund_stamp = this_stamp
+        else:
+            bundles[tracker_id] = {
+                msg.channel : {
+                    this_stamp: []
+                }
+            }
+            bund_stamp = this_stamp
+        bundles[tracker_id][msg.channel][bund_stamp].append({
+            "stamp" : this_stamp,
+            "sensor": msg.sensor_id,
+            "plane": msg.plane,
+            "angle": msg.angle
+        })
+    return bundles
+
+# ADDITIONAL SYMBOLS
+
+axis = Symbol("axis")
+tilt = Symbol("tilt")
+ogeephase = Symbol("ogeephase")
+ogeemag = Symbol("ogeemag")
+curve = Symbol("curve")
+gibpha = Symbol("gibpha")
+gibmag = Symbol("gibmag")
+phase = Symbol("phase")
+obs = Symbol("obs")
+
+# LIGHTHOUS GEN2 PREDICTION MODEL
+
+def gen2_pred(X, Y, Z, axis, tilt, curve, ogeemag, ogeephase, gibpha, gibmag, phase):
+    """Reprojection function for predicting an angle from sensor pose in lighthouse frame"""
+
+    # Angle in the X-Z plane (about the +Y axis) sweeping counter-clockwise from +X.
+    # Note that we do a sign inversion on Z here to convert to a left-hand system,
+    # which is the convention adopted by the projection model.
+    ccwAngleAboutY = atan2(-Z, X)
+
+    # Distances between sensor and origin
+    B = sqrt(X * X + Z * Z)           # L2 norm of (sensor - origin) in X-Z plane
+    C = sqrt(X * X + Y * Y + Z * Z)   # L2 norm of (sensor - origin)
+
+    # Tilt angle of the laser axis with respect to motor shaft, nominally 30 degrees
+    planeTiltAngle = tilt + (-1 if axis else 1) * pi / 6
+
+    # CORRECTIONS FOR THE TILTED LASET PLANE
+
+    # Viewed from any direction around the lighthouse:
+    #------------------------------------------------
+    # The moment the laser plane strikes the sensing element (@). THe optical axis runs
+    # from the sensor to the midpoint of the lens.
+    #
+    #          +Y
+    #  (@)__A__|
+    #    \     |       Angle * = "planeTiltAngle"
+    #     \    |       
+    #   R  \   |       Y/R = sin(*)  "how much do I move along A as I move along R"
+    #       \  |       A/R = cos(*)  "how much do I move along Y as I move along R"
+    #        \*|       A/Y = tan(*)  "how much do I move along A as I move along Y"
+    #         \|
+    #  +W <----+ <------------ this is the optical axis of the laser  
+    #          | \
+    #          |  \  <-------- laser plane
+    #          |   \
+    #
+    A_over_R = sin(planeTiltAngle)
+    Y_over_R = cos(planeTiltAngle)
+    A_over_Y = tan(planeTiltAngle)
+
+    # For a given Y coordinate, work out how much we'd need to be along A. Intuitively, A is the
+    # distance from the Y axis introduced by the fact that the plane is tilted with respect to Y. 
+    A = A_over_Y * Y
+
+    # Viewed from above the lighthouse:
+    # ---------------------------------
+    # Now that we know how far along A we've moved we can calculate the small angle error (*) as
+    # A / B = sin(#). Intuitively, this is the delta to the sweep angle that corrects for the
+    # plane tilt. In an ideal setting without fabrication errors, we could return the measurement
+    # here as ccwAngleAboutY + np.sin(A / B) and we'd be done! 
+    #
+    #                           +X
+    #                            |
+    #                            |
+    #                     (@)    |       B = np.sqrt(X * X + Z * Z)
+    #                  A, ' \    |       
+    #                 , ` 90 \ B |       A/B = sin(#) "sweep angle error added by tilt"
+    #             +W ',       \  |       
+    #                   '.,    \*|      
+    #                      '-,# \|
+    #   +Z <---------------------+ optical center
+    A_over_B = A / B
+
+    # For convenience, let's create a new value here to capture the tilt-compensated angle
+    tiltCorrectedCcwAngleAboutY = ccwAngleAboutY - asin(A_over_B) 
+
+    # CORRECTIONS FOR LENS ERRORS
+
+    # R is the distance from the sensor to the optical axis in the X-W plane, which is a
+    # frame that continually rotates about the lighthouse
+    R = Y / Y_over_R 
+
+    # A laser plane is interesting because unlike typical lens correction, which happens in
+    # a 2D image plane, this happens in 1D. So all that matters is deviation from the optical
+    # axis in 1D within the laser plane -- the further you move from the optical axis in the
+    # laser's plane, the more lens distortion you'd suffer. One neat thing about the 1D nature
+    # of the problem is that you need not model distortion as euclidean distance from the
+    # optical axis; you can just model it directly on the angle from the optical axis, which
+    # is proportional to the horizontal distance moved away from the optical axis :)
+    #
+    #                                (@)  sin(*) = R / C
+    #                                /|        "how much we've deviated from the optical axis"
+    #                            C  / |
+    #                              /  |  R
+    #                             / * |
+    #            optical center  +--------------> +W laser optical axis
+    #
+    angleFromOpticalCenterOfLens = asin(R / C)
+
+    # I don't exactly understand what this error is about, but it looks to be very similar to
+    # the mechanical error model. This suggests that there is some periodic component to the
+    # lens curvature that is a function of the motor spinning. My only guess is that the lens
+    # warps slightly as it rotates because of centripetal forces, and this correct for that.
+    #
+    #    x' = x + a sin (x + b)
+    #         |   +-----+-----+ 
+    #         +         |         
+    #   curve at zero   | 
+    #                   | 
+    #                   + 
+    #          Fourier correction
+    centripetalCompensatedBaseCurvature = curve + ogeemag * sin(
+        tiltCorrectedCcwAngleAboutY + ogeephase)
+    
+    # This is a 5th order polynomial expression that corrects for lens distortion, but in stead
+    # of describing an error in distance from optical axis, it describes an error as a multiple
+    # of the base curvature of the lens. Something like final_curvature = f(x) * base_curvature.
+    # The polynomial function looks something like the graph below. Domain is [-pi/2, +pi/2].
+    # 
+    #       |      4|        | f(x) = a[0]x^5 + a[1]x^4 + a[2]x^3 + a[3]x^2 + a[4]x^1 + a[5]
+    #        \      |       /
+    #         \    2|      /
+    #          `-.__|__.-'
+    #---------------+-------------> +x
+    #        -pi -2 0 +2 +pi
+    #
+    a = [-8.0108022e-06, 0.0028679863, 5.3685255000000001e-06, 0.0076069798000000001,  0,     0]
+    d = 0           # this ends up being f'(x)
+    b = a[0]        # this ends up being f(x)
+    for i in range(1, 6):
+        d = d * angleFromOpticalCenterOfLens + b
+        b = b * angleFromOpticalCenterOfLens + a[i]
+
+    # To make this easier, lets just multiply to get the curvature and its first derivative.
+    lensCurvature = b * centripetalCompensatedBaseCurvature
+    lensCurvatureFirstDerivative = d * centripetalCompensatedBaseCurvature
+
+    # Here is where we put all the lens correction terms together.
+    #
+    #                 A                   lensCurvature
+    #       asin (    -  +  ---------------------------------------------    )
+    #                 B      Y / R - lensCurvatureFirstDerivative * A / R
+    #
+    # The dividend represents the deviation along A, which if course depends on how far you
+    # have shifted from the laser optical axis. The divisor itself must also shift by a
+    # proportional amount.
+    #
+    ccwLensCorrectedAngleAboutY = ccwAngleAboutY - asin(
+        A_over_B + lensCurvature / (Y_over_R - lensCurvatureFirstDerivative * A_over_R))
+
+    # CORRECTIONS FOR MECHANICAL ERRORS
+
+    # Now that we have a tilt and lens-corrected angle we have to shift it by a small amount to
+    # compensate for mechanical vibration and lens mounting errors. We use a fourier term here
+    # that captures periodic error. In other words this error term repeats every 2pi, or one
+    # rotation about Y. Ultimately, it models the fact that the trajectory taken by the lens on
+    # an imperfect, imbalanced motorized system deviates from a perfect circle.
+    #
+    #    x' = x + a sin (x + b) - c
+    #         |   +-----+-----+   |
+    #         +         |         +--- Phase offset from zero. This is always 0 for axis = 0
+    #     raw angle     |              because that axis defines the start of the sweep. Axis
+    #                   |              1 has a small fabrication error around the motor spindle
+    #                   +              that phase advances or delays with respect to X, and this
+    #          Fourier correction      term corrects for that.
+    #
+    ccwMotorAndLensAndTiltCorrectedAngleAboutY = ccwLensCorrectedAngleAboutY + sin(
+        ccwLensCorrectedAngleAboutY + gibpha) * gibmag - phase
+
+    # Shift the angle clockwise 90 degree to be described with respect to +Z, and not +X.
+    return Matrix([ccwMotorAndLensAndTiltCorrectedAngleAboutY - pi / 2])
+
+# SYMBOLIC EVALUATION, JACOBIAN AND LAMBDIFICATION
+
+# Predict the sweep angle, given the sensor position, axis and lighthouse calibration
+light_fun = gen2_pred(X, Y, Z, axis, tilt, curve, ogeemag, ogeephase, gibpha, gibmag, phase)
+light_fun_lambda = lambdify(
+    [X, Y, Z, axis, tilt, curve, ogeemag, ogeephase, gibpha, gibmag, phase], light_fun, "numpy")
+
+# Get the derivative of the sweep angle with respect to the sensor position
+light_jac = light_fun.jacobian(Matrix([X, Y, Z]))
+light_jac_lambda = lambdify(
+    [X, Y, Z, axis, tilt, curve, ogeemag, ogeephase, gibpha, gibmag, phase], light_jac, "numpy")
+
+# LIGHT FACTOR
+
+def gen2_factor(calibration: dict,
+                t_sensor: gtsam.Point3,
+                axis: float,
+                angle: float,
+                this: gtsam.CustomFactor,
+                values: gtsam.Values,
+                jacobians: Optional[List[np.ndarray]]) -> float:
+    
+    # Extract the pose from the attached keys
+    pose_key = this.keys()[0]
+    lTt = values.atPose3(pose_key)
+
+    # Calculate the self-jacobian, given the point to be transformed
+    wx = -t_sensor[0]
+    wy = -t_sensor[1]
+    wz = -t_sensor[2]
+    skew_symmetric_matrix = np.array([
+        [0.0, -wz, +wy],
+        [+wz, 0.0, -wx],
+        [-wy, +wx, 0.0]])
+    J = np.concatenate((
+        np.matmul(lTt.rotation().matrix(), skew_symmetric_matrix),
+            lTt.rotation().matrix()), axis=1)
+
+    # Transform the sensor into the lighthouse frame by the proposed pose and extract coord
+    l_sensor = lTt.transformFrom(t_sensor)
+    x = l_sensor[0]
+    y = l_sensor[1]
+    z = l_sensor[2]
+
+    # HFOV is 150 degrees - if we are outside of this then we need to construct a gradient
+    # that steers the solver towards the frustrum.
+    ccwAngleAboutY = np.arctan2(-z, x) - np.pi / 2.0
+    if np.abs(ccwAngleAboutY) > np.radians(150.0 / 2):
+        if jacobians is not None:
+            jacobians[0] = np.matmul(np.array([[z/(x**2 + z**2), 0, -x/(x**2 + z**2)]]), J)
+        return np.array([ccwAngleAboutY])
+    
+    # VFOV is 110 degrees - if we are outside of this then we need to construct a gradient
+    # that steers the solver towards the frustrum.
+    ccwAngleAboutX = np.arctan2(-z, y) - np.pi / 2.0
+    if np.abs(ccwAngleAboutX) > np.radians(110.0 / 2):
+        if jacobians is not None:
+            jacobians[0] = np.matmul(np.array([[0, z/(y**2 + z**2), -y/(y**2 + z**2)]]), J)
+        return np.array([ccwAngleAboutX])
+    
+    # The residual error is the predicted angle less the observed angle
+    err = light_fun_lambda(
+        X=x,
+        Y=y,
+        Z=z,
+        axis=axis,
+        tilt=calibration["tilt"],
+        curve=calibration["curve"],
+        ogeemag=calibration["ogeemag"],
+        ogeephase=calibration["ogeephase"],
+        gibpha=calibration["gibpha"],
+        gibmag=calibration["gibmag"],
+        phase=calibration["phase"])
+                    
+    # Calculate the sweep angle S with repect to the pose as dS/dP = dS/dX * dX/dP using the
+    # chain rule, where X is the point of the sensor in the lighthouse frame.
+    if jacobians is not None:
+        jac = light_jac_lambda(
+            X=x,
+            Y=y,
+            Z=z,
+            axis=axis,
+            tilt=calibration["tilt"],
+            curve=calibration["curve"],
+            ogeemag=calibration["ogeemag"],
+            ogeephase=calibration["ogeephase"],
+            gibpha=calibration["gibpha"],
+            gibmag=calibration["gibmag"],
+            phase=calibration["phase"])
+        jacobians[0] = np.matmul(jac, J)
+
+    return err - angle
+
+def calculate_poses(lighthouses, trackers, bundles):
+    """Iterates through tracker/lighthouses and calculates poses"""
+    for tracker_id, tracker_info in bundles.items():
+        print("Tracker", id)
+        for channel_id, channel_info in tracker_info.items():
+            print("+ Channel", channel_id)
+            for stamp, bundle in channel_info.items():
+                print("++ Bundle at", stamp, "contains", len(bundle), "observations")
+                factor_graph = gtsam.NonlinearFactorGraph()
+                initial_estimate = gtsam.Values()
+                initial_estimate.insert(0, gtsam.Pose3(
+                    gtsam.Rot3.Rodrigues(0.0, 0.0, 0.0), gtsam.Point3(0.0, 0.0, -1.0)))
+                # factor_graph.add(
+                #     gtsam.PriorFactorPose3(
+                #         0,
+                #         gtsam.Pose3(
+                #             gtsam.Rot3.Rodrigues(0.0, 0.0, 0.0),
+                #             gtsam.Point3(0.0, 0.0, -0.6)
+                #         ),
+                #         gtsam.noiseModel.Diagonal.Variances(np.array([9, 9, 9, 36, 36, 36]))))
+
+                # This value is based on Alan Yate's tech presentation, where he stated that the
+                # resolution of one sweep is 800 000 ticks, which means that we can't resolve
+                # beyond the resolution of 1 tick, which at 60Hz is about 7.85398e-7 radians.
+                light_model = gtsam.noiseModel.Isotropic.Sigma(1, 7.85398e-7)
+                for data in bundle:
+                    factor_graph.add(gtsam.CustomFactor(
+                        light_model, [0], partial(gen2_factor,
+                                                  lighthouses[channel_id][data["plane"]],
+                                                  gtsam.Point3(
+                                                    trackers[tracker_id][data["sensor"]]["point"][0],
+                                                    trackers[tracker_id][data["sensor"]]["point"][1],
+                                                    trackers[tracker_id][data["sensor"]]["point"][2]
+                                                  ),
+                                                  data["plane"],
+                                                  data["angle"])))
+                params = gtsam.LevenbergMarquardtParams()
+                params.setVerbosityLM("SUMMARY")
+                optimizer = gtsam.LevenbergMarquardtOptimizer(factor_graph, initial_estimate, params)
+                result = optimizer.optimize()
+                result.print("Result:")
+
+if __name__ == "__main__":
+
+    # Handle arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-b", "--bag", type=str, required=True, help="the bag file to input")
+    parser.add_argument("-d", "--duration", type=float, required=False, help="number of seconds to read")
+    parser.add_argument("-n", "--namespace", default='/libsurvive', help="the bag file to output")
+    args = parser.parse_args()
+
+    storage_options, converter_options = get_rosbag_options(args.bag, 'mcap')
+    reader = rosbag2_py.SequentialReader()
+    reader.open(storage_options, converter_options)
+
+    # Read all measurements
+    lighthouses = get_all_lighthouses(reader, args.namespace, args.duration)
+    trackers = get_all_trackers(reader, args.namespace, args.duration)
+    bundles = get_all_light_bundles(reader, args.namespace, args.duration)
+    
+    # A tracker spins at 50Hz, so there should be a gap of around 10ms between light bundles.
+    calculate_poses(lighthouses, trackers, bundles)

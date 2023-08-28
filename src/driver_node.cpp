@@ -22,7 +22,7 @@
 #include <memory>
 
 // Others
-#include "libsurvive_ros2/component.hpp"
+#include "libsurvive_ros2/driver_component.hpp"
 #include "rclcpp/rclcpp.hpp"
 
 
@@ -30,8 +30,9 @@
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
+  auto node = std::make_shared<libsurvive_ros2::DriverComponent>(rclcpp::NodeOptions{});
   rclcpp::executors::SingleThreadedExecutor exec;
-  exec.add_node(std::make_shared<libsurvive_ros2::Component>(rclcpp::NodeOptions{}));
+  exec.add_node(node);
   exec.spin();
   rclcpp::shutdown();
   return 0;
