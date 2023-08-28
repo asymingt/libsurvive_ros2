@@ -33,8 +33,19 @@ from functools import partial
 from typing import List, Optional
 import gtsam
 
-from sympy import atan2, asin, sin, cos, tan, sqrt, Matrix, Symbol, simplify, compose, init_printing
-from sympy.abc import x, y, z
+from sympy import atan2, asin, sin, cos, tan, sqrt, Matrix, Symbol
+from sympy.abc import X, Y, Z
+
+# Additional symbols
+axis = Symbol("axis")
+tilt = Symbol("tilt")
+ogeephase = Symbol("ogeephase")
+ogeemag = Symbol("ogeemag")
+curve = Symbol("curve")
+gibpha = Symbol("gibpha")
+gibmag = Symbol("gibmag")
+phase = Symbol("phase")
+obs = Symbol("obs")
 
 ## DATA HANDLERS
 
@@ -156,31 +167,20 @@ def get_all_light_bundles(reader, namespace, duration):
 
 # PROJECTION MODEL
 
-def calc_gen2_err(X, Y, Z, plane, cal, obs):
+def gen2_pred(X, Y, Z, axis, tilt, curve, ogeemag, ogeephase, gibpha, gibmag, phase, obs):
     """Reprojection function for predicting an angle from sensor pose in lighthouse frame"""
 
     # Angle in the X-Z plane (about the +Y axis) sweeping counter-clockwise from +X.
     # Note that we do a sign inversion on Z here to convert to a left-hand system,
     # which is the convention adopted by the projection model.
-    ccwAngleAboutY = np.arctan2(-Z, X)
-    ccwAngleAboutX = np.arctan2(-Z, Y)
-
-    # We know from the Vive documentation that the HFOV is 150 degrees and the VFOV is
-    # 110 degrees. It turns out that beyond this region results in numerical instability,
-    # so the best thing to do is try and steer the numerical solver closer to a solution.
-    # This basically nudges the solver towards the base station frustrum
-
-    if ccwAngleAboutY < np.radians(15) or ccwAngleAboutY > np.radians(165):
-        return np.abs(ccwAngleAboutY - np.radians(90))
-    if ccwAngleAboutX < np.radians(35) or ccwAngleAboutX > np.radians(145):
-        return np.abs(ccwAngleAboutX - np.radians(90))
+    ccwAngleAboutY = atan2(-Z, X)
 
     # Distances between sensor and origin
-    B = np.sqrt(X * X + Z * Z)           # L2 norm of (sensor - origin) in X-Z plane
-    C = np.sqrt(X * X + Y * Y + Z * Z)   # L2 norm of (sensor - origin)
+    B = sqrt(X * X + Z * Z)           # L2 norm of (sensor - origin) in X-Z plane
+    C = sqrt(X * X + Y * Y + Z * Z)   # L2 norm of (sensor - origin)
 
-    # Tilt angle of the laser plane with respect to motor shaft, nominally 30 degrees
-    planeTiltAngle = cal["tilt"] + (-1 if plane else 1) * np.pi / 6.
+    # Tilt angle of the laser axis with respect to motor shaft, nominally 30 degrees
+    planeTiltAngle = tilt + (-1 if axis else 1) * np.pi / 6.
 
     # CORRECTIONS FOR THE TILTED LASET PLANE
 
@@ -202,9 +202,9 @@ def calc_gen2_err(X, Y, Z, plane, cal, obs):
     #          |  \  <-------- laser plane
     #          |   \
     #
-    A_over_R = np.sin(planeTiltAngle)
-    Y_over_R = np.cos(planeTiltAngle)
-    A_over_Y = np.tan(planeTiltAngle)
+    A_over_R = sin(planeTiltAngle)
+    Y_over_R = cos(planeTiltAngle)
+    A_over_Y = tan(planeTiltAngle)
 
     # For a given Y coordinate, work out how much we'd need to be along A. Intuitively, A is the
     # distance from the Y axis introduced by the fact that the plane is tilted with respect to Y. 
@@ -230,7 +230,7 @@ def calc_gen2_err(X, Y, Z, plane, cal, obs):
     A_over_B = A / B
 
     # For convenience, let's create a new value here to capture the tilt-compensated angle
-    tiltCorrectedCcwAngleAboutY = ccwAngleAboutY - np.arcsin(A_over_B) 
+    tiltCorrectedCcwAngleAboutY = ccwAngleAboutY - asin(A_over_B) 
 
     # CORRECTIONS FOR LENS ERRORS
 
@@ -253,7 +253,7 @@ def calc_gen2_err(X, Y, Z, plane, cal, obs):
     #                             / * |
     #            optical center  +--------------> +W laser optical axis
     #
-    angleFromOpticalCenterOfLens = np.arcsin(R / C)
+    angleFromOpticalCenterOfLens = asin(R / C)
 
     # I don't exactly understand what this error is about, but it looks to be very similar to
     # the mechanical error model. This suggests that there is some periodic component to the
@@ -267,8 +267,8 @@ def calc_gen2_err(X, Y, Z, plane, cal, obs):
     #                   | 
     #                   + 
     #          Fourier correction
-    centripetalCompensatedBaseCurvature = cal["curve"] + cal["ogeemag"] * np.sin(
-        tiltCorrectedCcwAngleAboutY + cal["ogeephase"])
+    centripetalCompensatedBaseCurvature = curve + ogeemag * sin(
+        tiltCorrectedCcwAngleAboutY + ogeephase)
     
     # This is a 5th order polynomial expression that corrects for lens distortion, but in stead
     # of describing an error in distance from optical axis, it describes an error as a multiple
@@ -303,7 +303,7 @@ def calc_gen2_err(X, Y, Z, plane, cal, obs):
     # have shifted from the laser optical axis. The divisor itself must also shift by a
     # proportional amount.
     #
-    ccwLensCorrectedAngleAboutY = ccwAngleAboutY - np.arcsin(
+    ccwLensCorrectedAngleAboutY = ccwAngleAboutY - asin(
         A_over_B + lensCurvature / (Y_over_R - lensCurvatureFirstDerivative * A_over_R))
 
     # CORRECTIONS FOR MECHANICAL ERRORS
@@ -322,13 +322,15 @@ def calc_gen2_err(X, Y, Z, plane, cal, obs):
     #                   +              that phase advances or delays with respect to X, and this
     #          Fourier correction      term corrects for that.
     #
-    ccwMotorAndLensAndTiltCorrectedAngleAboutY = ccwLensCorrectedAngleAboutY + np.sin(
-        ccwLensCorrectedAngleAboutY + cal["gibpha"]) * cal["gibmag"] - cal["phase"]
+    ccwMotorAndLensAndTiltCorrectedAngleAboutY = ccwLensCorrectedAngleAboutY + sin(
+        ccwLensCorrectedAngleAboutY + gibpha) * gibmag - phase
 
     # Shift the angle clockwise 90 degree to be described with respect to +Z, and not +X.
-    return np.abs(ccwMotorAndLensAndTiltCorrectedAngleAboutY - np.pi / 2.0 - obs)
+    return Matrix([ccwMotorAndLensAndTiltCorrectedAngleAboutY - np.pi / 2.0 - obs])
 
-# So th
+# Predict the sweep angle, given the sensor position, axis and lighthouse calibration
+light_fun = gen2_pred(X, Y, Z, axis, tilt, curve, ogeemag, ogeephase, gibpha, gibmag, phase, obs)
+light_jac = light_fun.jacobian(Matrix([X, Y, Z]))
 
 def light_error(calibration: dict,
                 t_sensor: gtsam.Point3,
@@ -378,16 +380,33 @@ def light_error(calibration: dict,
         return np.array([ccwAngleAboutX])
     
     # If we get here then the sensor is in the camera frustrum, now we can actually do the
-    # hard work of calculating the projection error.
-    err = calc_gen2_err(l_sensor[0], l_sensor[1], l_sensor[2], axis, calibration, angle)
-    jac = calc_gen2_jac(axis, calibration, angle)
-
+    # hard work of calculating the projection error. This is a list of subsistutions for
+    # named variables in a symbolic expression.
+    subs = {
+        X: x,
+        Y: y,
+        Z: z,
+        axis: axis,
+        tilt: calibration["tilt"],
+        curve: calibration["curve"],
+        ogeemag: calibration["ogeemag"],
+        ogeephase: calibration["ogeephase"],
+        gibpha: calibration["gibpha"],
+        gibmag: calibration["gibmag"],
+        phase: calibration["phase"],
+        obs: angle
+    }
+    
+    # The residual error is the predicted angle less the observed angle
+    error = np.array(light_fun.evalf(subs=subs), dtype=float)
+    print(error)
+                    
     # Calculate the sweep angle S with repect to the pose as dS/dP = dS/dX * dX/dP using the
     # chain rule, where X is the point of the sensor in the lighthouse frame.
     if jacobians is not None:
-        jacobians[0] = np.matmul(np.array([[1, 1, 1]]), J)
+        jacobians[0] = np.matmul(np.array(light_jac.evalf(subs=subs), dtype=float), J)
 
-    return np.array([error])
+    return error
 
 def calculate_poses(lighthouses, trackers, bundles):
     """Iterates through tracker/lighthouses and calculates poses"""
@@ -400,7 +419,7 @@ def calculate_poses(lighthouses, trackers, bundles):
                 factor_graph = gtsam.NonlinearFactorGraph()
                 initial_estimate = gtsam.Values()
                 initial_estimate.insert(0, gtsam.Pose3(
-                    gtsam.Rot3.Rodrigues(0.0, 0.0, 0.0), gtsam.Point3(0.0, 0.0, 1.0)))
+                    gtsam.Rot3.Rodrigues(0.0, 0.0, 0.0), gtsam.Point3(0.0, 0.0, -3.0)))
                 light_model = gtsam.noiseModel.Isotropic.Sigma(1, 0.000001)
                 for data in bundle:
                     factor_graph.add(gtsam.CustomFactor(
