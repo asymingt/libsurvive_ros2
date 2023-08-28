@@ -33,6 +33,9 @@ from functools import partial
 from typing import List, Optional
 import gtsam
 
+from sympy import atan2, asin, sin, cos, tan, sqrt, Matrix, Symbol, simplify, compose, init_printing
+from sympy.abc import x, y, z
+
 ## DATA HANDLERS
 
 def get_rosbag_options(path, storage_id, serialization_format='cdr'):
@@ -151,34 +154,7 @@ def get_all_light_bundles(reader, namespace, duration):
         })
     return bundles
 
-## REFERENCE IMPLEMENTATION
-
-def calc_cal_series(s):
-    f = [-8.0108022e-06, 0.0028679863, 5.3685255000000001e-06, 0.0076069798000000001, 0, 0]
-    m = f[0]
-    a = 0
-    for i in range(0, 6):
-        a = a * s + m
-        m = m * s + f[i]
-    return m, a
-
-def calc_gen2_error_orig(X, Y, Z, axis, cal, obs):
-    B = np.arctan2(Z, X)
-    Ydeg = cal["tilt"] + (-1 if axis else 1) * np.pi / 6.
-    asinArg = np.tan(Ydeg) * Y / np.sqrt(X * X + Z * Z)
-    sinYdeg = np.sin(Ydeg)
-    cosYdeg = np.cos(Ydeg)
-    sinPart = np.sin(B - np.arcsin(asinArg) + cal["ogeephase"]) * cal["ogeemag"]
-    modAsinArg = Y / np.sqrt(X * X + Y * Y + Z * Z) / cosYdeg
-    asinOut = np.arcsin(modAsinArg)
-    mod, acc = calc_cal_series(asinOut)
-    BcalCurved = sinPart + cal["curve"]
-    asinArg2 = asinArg + mod * BcalCurved / (cosYdeg - acc * BcalCurved * sinYdeg)
-    asinOut2 = np.arcsin(asinArg2)
-    sinOut2 = np.sin(B - asinOut2 + cal["gibpha"])
-    return B - asinOut2 + sinOut2 * cal["gibmag"] - cal["phase"] - np.pi / 2. - obs
-
-## MORE HUMAN READABLE IMPLEMENTATION
+# PROJECTION MODEL
 
 def calc_gen2_err(X, Y, Z, plane, cal, obs):
     """Reprojection function for predicting an angle from sensor pose in lighthouse frame"""
@@ -354,11 +330,8 @@ def calc_gen2_err(X, Y, Z, plane, cal, obs):
 
 # So th
 
-def calc_gen2_jac():
-
-
 def light_error(calibration: dict,
-                t_sensor: np.ndarray,
+                t_sensor: gtsam.Point3,
                 axis: float,
                 angle: float,
                 this: gtsam.CustomFactor,
@@ -368,16 +341,51 @@ def light_error(calibration: dict,
     pose_key = this.keys()[0]
     lTt = values.atPose3(pose_key)
 
+    # Calculate the self-jacobian, given the point to be transformed
+    q = lTt.rotation().inverse().rotate(t_sensor - lTt.translation())
+    wx = q[0]
+    wy = q[1]
+    wz = q[2]
+    J = np.array([
+        [0.0, -wz, +wy,-1.0, 0.0, 0.0],
+        [+wz, 0.0, -wx, 0.0,-1.0, 0.0],
+        [-wy, +wx, 0.0, 0.0, 0.0,-1.0]])
+    
     # Transform the sensor into the lighthouse frame by the proposed pose
-    l_sensor = lTt.transformTo(gtsam.Point3(t_sensor[0], t_sensor[1], t_sensor[2]))
+    l_sensor = lTt.transformTo(t_sensor)
 
-    # 
-    error = calc_gen2_err(l_sensor[0], l_sensor[1], l_sensor[2], axis, calibration, angle)
+    # Extract x, y, z coord in the RHS lighthouse frame
+    x = l_sensor[0]
+    y = l_sensor[1]
+    z = l_sensor[2]
 
-    # Calculate dZ/dX, a 1x6 matrix expressing the error state as a function of the pose
+    # HFOV is 150 degrees - if we are outside of this then we need to construct a gradient
+    # that steers the solver towards the frustrum.
+    ccwAngleAboutY = np.arctan2(-z, x) - np.pi / 2.0
+    if np.abs(ccwAngleAboutY) > np.radians(150.0 / 2):
+        print("Y", np.degrees(ccwAngleAboutY))
+        if jacobians is not None:
+            jacobians[0] = np.matmul(np.array([[z/(x**2 + z**2), 0, -x/(x**2 + z**2)]]), J)
+        return np.array([ccwAngleAboutY])
+    
+    # VFOV is 110 degrees - if we are outside of this then we need to construct a gradient
+    # that steers the solver towards the frustrum.
+    ccwAngleAboutX = np.arctan2(-z, y) - np.pi / 2.0
+    if np.abs(ccwAngleAboutX) > np.radians(110.0 / 2):
+        print("X", np.degrees(ccwAngleAboutX))
+        if jacobians is not None:
+            jacobians[0] = np.matmul(np.array([[0, z/(y**2 + z**2), -y/(y**2 + z**2)]]), J)
+        return np.array([ccwAngleAboutX])
+    
+    # If we get here then the sensor is in the camera frustrum, now we can actually do the
+    # hard work of calculating the projection error.
+    err = calc_gen2_err(l_sensor[0], l_sensor[1], l_sensor[2], axis, calibration, angle)
+    jac = calc_gen2_jac(axis, calibration, angle)
+
+    # Calculate the sweep angle S with repect to the pose as dS/dP = dS/dX * dX/dP using the
+    # chain rule, where X is the point of the sensor in the lighthouse frame.
     if jacobians is not None:
-        jacobians[0] = calc_gen2_jac()
-
+        jacobians[0] = np.matmul(np.array([[1, 1, 1]]), J)
 
     return np.array([error])
 
@@ -392,19 +400,25 @@ def calculate_poses(lighthouses, trackers, bundles):
                 factor_graph = gtsam.NonlinearFactorGraph()
                 initial_estimate = gtsam.Values()
                 initial_estimate.insert(0, gtsam.Pose3(
-                    gtsam.Rot3.Rodrigues(0.0, 0.0, 0.0), gtsam.Point3(0.0, 0.0, -3.0)))
+                    gtsam.Rot3.Rodrigues(0.0, 0.0, 0.0), gtsam.Point3(0.0, 0.0, 1.0)))
                 light_model = gtsam.noiseModel.Isotropic.Sigma(1, 0.000001)
                 for data in bundle:
                     factor_graph.add(gtsam.CustomFactor(
                         light_model, [0], partial(light_error,
                                                   lighthouses[channel_id][data["plane"]],
-                                                  trackers[tracker_id][data["sensor"]]["point"],
+                                                  gtsam.Point3(
+                                                    trackers[tracker_id][data["sensor"]]["point"][0],
+                                                    trackers[tracker_id][data["sensor"]]["point"][1],
+                                                    trackers[tracker_id][data["sensor"]]["point"][2]
+                                                  ),
                                                   data["plane"],
                                                   data["angle"])))
+                factor_graph.print("Graph:")
+                initial_estimate.print("Initial estimate:")
                 params = gtsam.LevenbergMarquardtParams()
                 optimizer = gtsam.LevenbergMarquardtOptimizer(factor_graph, initial_estimate, params)
                 result = optimizer.optimize()
-                result.print("result")
+                result.print("Result:")
                 return
 
                     # sensor_pt = pt.transform(pose, trackers[tracker_id][sensor_id]["point"])
