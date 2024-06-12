@@ -199,11 +199,11 @@ void Component::work()
           sensor_msgs::msg::Joy joy_msg;
           joy_msg.header.frame_id = survive_simple_serial_number(button_event->object);
           joy_msg.header.stamp = this->get_ros_time("button", button_event->time);
-          joy_msg.axes.resize(SURVIVE_MAX_AXIS_COUNT);
+          joy_msg.axes.resize(SURVIVE_MAX_AXIS_COUNT * 2);
           joy_msg.buttons.resize(SURVIVE_BUTTON_MAX * 2);
           int64_t mask = survive_simple_object_get_button_mask(obj);
           mask |= (survive_simple_object_get_touch_mask(obj) << SURVIVE_BUTTON_MAX);
-          for (int i = 0; i < SURVIVE_MAX_AXIS_COUNT; i++) {
+          for (int i = 0; i < SURVIVE_MAX_AXIS_COUNT * 2; i++) {
             joy_msg.axes[i] =
               static_cast<float>(survive_simple_object_get_input_axis(obj, (enum SurviveAxis)i));
           }
