@@ -22,7 +22,6 @@
 
 # Docker Compose Spec Version
 # See: https://docs.docker.com/compose/compose-file/compose-versioning/#version-3
-version: '3.6'
 
 services:
   libsurvive_ros2:

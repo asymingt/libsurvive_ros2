@@ -33,7 +33,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends                
         cmake                                                                   \
         freeglut3-dev                                                           \
         gdb                                                                     \
-        libatlas-base-dev                                                       \
         liblapacke-dev                                                          \
         libopenblas-dev                                                         \
         libpcap-dev                                                             \
@@ -45,7 +44,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends                
     && sudo rm -rf /var/lib/apt/lists/*
 
 # Add an 'ubuntu' user with dialout/plugdev access and can use sudo passwordless.
-RUN useradd -ms /bin/bash ubuntu && echo "ubuntu:ubuntu" | chpasswd
 RUN usermod -aG sudo,dialout,plugdev ubuntu
 RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
