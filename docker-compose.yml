@@ -25,11 +25,6 @@
 
 services:
   libsurvive_ros2:
-    privileged: false
-    device_cgroup_rules:
-      - 'c *:* rmw'
-    volumes:
-      - /dev:/dev
     build: .
     ports:
       - "9090:9090"
