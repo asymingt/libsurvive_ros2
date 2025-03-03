@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2022 Andrew Symington
+# Copyright (c) 2025 Andrew Symington
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -22,18 +22,12 @@
 
 # Docker Compose Spec Version
 # See: https://docs.docker.com/compose/compose-file/compose-versioning/#version-3
-version: '3.6'
 
 services:
   libsurvive_ros2:
-    privileged: false
-    device_cgroup_rules:
-      - 'c *:* rmw'
-    volumes:
-      - /dev:/dev
     build: .
     ports:
       - "9090:9090"
-    entrypoint: /home/ubuntu/ros2_ws/entrypoint.sh
-    working_dir: /home/ubuntu/ros2_ws
+    entrypoint: /home/ros/ros2_ws/entrypoint.sh
+    working_dir: /home/ros/ros2_ws
     command: ros2 launch libsurvive_ros2 libsurvive_ros2.launch.py rosbridge:=true composable:=false

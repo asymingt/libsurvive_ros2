@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2023 Andrew Symington
+# Copyright (c) 2025 Andrew Symington
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -33,7 +33,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends                
         cmake                                                                   \
         freeglut3-dev                                                           \
         gdb                                                                     \
-        libatlas-base-dev                                                       \
         liblapacke-dev                                                          \
         libopenblas-dev                                                         \
         libpcap-dev                                                             \
@@ -44,21 +43,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends                
         zlib1g-dev                                                              \
     && sudo rm -rf /var/lib/apt/lists/*
 
-# Add an 'ubuntu' user with dialout/plugdev access and can use sudo passwordless.
-RUN useradd -ms /bin/bash ubuntu && echo "ubuntu:ubuntu" | chpasswd
-RUN usermod -aG sudo,dialout,plugdev ubuntu
+# Add an 'ros' user with dialout/plugdev access and can use sudo passwordless.
+RUN useradd -ms /bin/bash ros && echo "ros:ros" | chpasswd
+RUN usermod -aG sudo,dialout,plugdev ros
 RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
 # Switch to the non-root user.
-USER ubuntu
+USER ros
 
 # Copy the source code into our test workspace.
-RUN mkdir -p /home/ubuntu/ros2_ws/src/libsurvive_ros2
-COPY --chown=ubuntu:ubuntu . /home/ubuntu/ros2_ws/src/libsurvive_ros2
+RUN mkdir -p /home/ros/ros2_ws/src/libsurvive_ros2
+COPY --chown=ros:ros . /home/ros/ros2_ws/src/libsurvive_ros2
 
 # Install baseline tools
 RUN sudo apt-get update                                                         \
-    && cd /home/ubuntu/ros2_ws                                                  \
+    && cd /home/ros/ros2_ws                                                     \
     && rosdep update                                                            \
     && rosdep install --from-paths src --ignore-src -r -y                       \
     && source /opt/ros/$ROS_DISTRO/setup.bash                                   \
@@ -68,9 +67,9 @@ RUN sudo apt-get update                                                         
 # Initialization
 RUN echo -e "#!/bin/bash \n\
 set -e\n\
-source /home/ubuntu/ros2_ws/install/setup.bash \n\
-exec \$@" > /home/ubuntu/ros2_ws/entrypoint.sh
-RUN chmod 755 /home/ubuntu/ros2_ws/entrypoint.sh
-WORKDIR /home/ubuntu/ros2_ws
-ENTRYPOINT [ "/home/ubuntu/ros2_ws/entrypoint.sh" ]
+source /home/ros/ros2_ws/install/setup.bash \n\
+exec \$@" > /home/ros/ros2_ws/entrypoint.sh
+RUN chmod 755 /home/ros/ros2_ws/entrypoint.sh
+WORKDIR /home/ros/ros2_ws
+ENTRYPOINT [ "/home/ros/ros2_ws/entrypoint.sh" ]
 
