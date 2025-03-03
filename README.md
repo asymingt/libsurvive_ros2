@@ -49,7 +49,7 @@ $ docker compose build
 $ docker compose run libsurvive_ros2 colcon test
 ```
 
-This will checkout a lightweight ROS2 rolling container, augment it with a few system dependencies, checkout and build the code and drop you into a bash shell as user `ubuntu` at the home directory `~/ros2_ws/src`. If you'd rather build and test for ROS2 Foxy on arm64, as an example, you'd do this:
+This will checkout a lightweight ROS2 rolling container, augment it with a few system dependencies, checkout and build the code and drop you into a bash shell as user `ros` at the home directory `/home/ros/ros2_ws/src`. If you'd rather build and test for ROS2 Foxy on arm64, as an example, you'd do this:
 
 ```sh
 $ docker compose build --build-arg ARCH=arm64 --build-arg ROS_DISTRO=foxy
@@ -68,7 +68,6 @@ You'll also need to follow the instructions here:
 sudo apt-get install build-essential \
     cmake \
     freeglut3-dev \
-    libatlas-base-dev \
     liblapacke-dev \
     libopenblas-dev \
     libpcap-dev \
