@@ -101,7 +101,7 @@ $ docker compose up
 Alternatively, to run the driver on native installations run the following:
 
 ```sh
-$ ros2 run libsurvive_ros2 libsurvive_ros2.launch.py rosbridge:=true
+$ ros2 launch libsurvive_ros2 libsurvive_ros2.launch.py rosbridge:=true
 ```
 
 There are three launch arguments to `libsurvive_ros2.launch.py` to help get up and running:
