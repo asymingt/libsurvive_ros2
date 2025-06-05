@@ -38,58 +38,72 @@ workflows:
   build:
     jobs:
       - checkout_build_test:
+          name: ros2-foxy-arm64
           resource_class: arm.medium
           arch: arm64v8
           ros_distro: foxy
       - checkout_build_test:
+          name: ros2-galactic-arm64
           resource_class: arm.medium
           arch: arm64v8
           ros_distro: galactic
       - checkout_build_test:
+          name: ros2-humble-arm64
           resource_class: arm.medium
           arch: arm64v8
           ros_distro: humble
       - checkout_build_test:
+          name: ros2-iron-arm64
           resource_class: arm.medium
           arch: arm64v8
           ros_distro: iron
       - checkout_build_test:
+          name: ros2-jazzy-arm64
           resource_class: arm.medium
           arch: arm64v8
           ros_distro: jazzy
       - checkout_build_test:
+          name: ros2-kilted-arm64
           resource_class: arm.medium
           arch: arm64v8
           ros_distro: kilted
       - checkout_build_test:
+          name: ros2-rolling-arm64
           resource_class: arm.medium
           arch: arm64v8
           ros_distro: rolling
       - checkout_build_test:
+          name: ros2-foxy-amd64
           resource_class: medium
           arch: amd64
           ros_distro: foxy
       - checkout_build_test:
+          name: ros2-galactic-amd64
           resource_class: medium
           arch: amd64
           ros_distro: galactic
       - checkout_build_test:
+          name: ros2-humble-amd64
           resource_class: medium
           arch: amd64
           ros_distro: humble
       - checkout_build_test:
+          name: ros2-iron-amd64
           resource_class: medium
           arch: amd64
           ros_distro: iron
       - checkout_build_test:
+          name: ros2-jazzy-amd64
           resource_class: medium
           arch: amd64
           ros_distro: jazzy
       - checkout_build_test:
+          name: ros2-kilted-amd64
           resource_class: medium
           arch: amd64
           ros_distro: kilted
       - checkout_build_test:
+          name: ros2-rolling-amd64
           resource_class: medium
           arch: amd64
           ros_distro: rolling
