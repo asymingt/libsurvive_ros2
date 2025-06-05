@@ -29,15 +29,21 @@ SHELL ["/bin/bash", "-c"]
 
 # Grab the latest ROS2 key to avoid an outdated key from affecting the build.
 # See: https://github.com/osrf/docker_images/issues/807.
-RUN rm -rf /etc/apt/sources.list.d/ros2.sources
-RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
-RUN echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null
+RUN rm -rf                                                                      \
+    /etc/apt/sources.list.d/ros2.sources                                        \
+    /etc/apt/sources.list.d/ros2-snapshots.list                                 \
+ && apt-get --allow-unauthenticated --allow-insecure-repositories update        \
+ && apt-get install -y --no-install-recommends curl                             \
+ && sudo rm -rf /var/lib/apt/lists/*                                            \
+ && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key    \
+    -o /usr/share/keyrings/ros2-snapshots-archive-keyring.gpg                   \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros2-snapshots-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null
 
 # Install baseline tools
-RUN apt-get update && apt-get install -y --no-install-recommends                \
+RUN apt-get update                                                              \
+ && apt-get install -y --no-install-recommends                                  \
         build-essential                                                         \
         cmake                                                                   \
-        curl                                                                    \
         freeglut3-dev                                                           \
         gdb                                                                     \
         liblapacke-dev                                                          \
@@ -64,12 +70,12 @@ COPY --chown=ros:ros . /home/ros/ros2_ws/src/libsurvive_ros2
 
 # Install baseline tools
 RUN sudo apt-get update                                                         \
-    && cd /home/ros/ros2_ws                                                     \
-    && rosdep update                                                            \
-    && rosdep install --from-paths src --ignore-src -r -y                       \
-    && source /opt/ros/$ROS_DISTRO/setup.bash                                   \
-    && colcon build                                                             \
-    && sudo rm -rf /var/lib/apt/lists/*
+ && cd /home/ros/ros2_ws                                                        \
+ && rosdep update                                                               \
+ && rosdep install --from-paths src --ignore-src -r -y                          \
+ && source /opt/ros/$ROS_DISTRO/setup.bash                                      \
+ && colcon build                                                                \
+ && sudo rm -rf /var/lib/apt/lists/*
 
 # Initialization
 RUN echo -e "#!/bin/bash \n\
