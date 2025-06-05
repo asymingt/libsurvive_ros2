@@ -29,7 +29,7 @@ SHELL ["/bin/bash", "-c"]
 
 # Grab the latest ROS2 key to avoid an outdated key from affecting the build.
 # See: https://github.com/osrf/docker_images/issues/807.
-RUN rm /etc/apt/sources.list.d/*
+RUN rm -rf /etc/apt/sources.list.d/ros2.sources
 RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
 RUN echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null
 
