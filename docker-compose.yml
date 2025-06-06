@@ -27,7 +27,8 @@ services:
   libsurvive_ros2:
     build: .
     ports:
-      - "9090:9090"
+      - 8765
+      - 9090
     entrypoint: /home/ros/ros2_ws/entrypoint.sh
     working_dir: /home/ros/ros2_ws
-    command: ros2 launch libsurvive_ros2 libsurvive_ros2.launch.py rosbridge:=true composable:=false
+    command: ros2 launch libsurvive_ros2 libsurvive_ros2.launch.py foxbridge:=true composable:=false
