@@ -41,7 +41,7 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 include(ExternalProject)
 externalproject_add(libsurvive
   GIT_REPOSITORY https://github.com/cntools/libsurvive.git
-  GIT_TAG master
+  GIT_TAG 32cf62c52744fdc32003ef8169e8b81f6f31526b
   CMAKE_ARGS
     -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}/libsurvive-install
     -DCMAKE_BUILD_TYPE=Release
