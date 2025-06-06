@@ -41,7 +41,7 @@
     ],
     "remoteUser": "ros", 
     "containerUser": "ros",
-    "forwardPorts": [8765],
+    "forwardPorts": [8765, 9090],
     "workspaceMount": "source=${localWorkspaceFolder},target=/home/ros/ros2_ws/src/libsurvive_ros2,type=bind",
     "workspaceFolder": "/home/ros/ros2_ws"
 }

@@ -124,7 +124,8 @@ There are three launch arguments to `libsurvive_ros2.launch.py` to help get up a
 
 - `namespace = string (default: 'libsurvive')` : This is the namespace on which to add the extra topics for sensor data.
 - `record = boolean (default: false)` : Start a `ros2 bag record` to save `/tf` and `/tf_static` topics to a ros bag in the ROS2 log directory for the current launch ID as `libsurvive.bag`.
-- `rosbridge = boolean (default: false)` : Starts a `rosbridge_server` and `rosapi`, which offers data over a websocket by default at port 9090, which allows you to stream directly into the [foxglove.dev](https://foxglove.dev) robotics visualization tool.
+- `foxbridge = boolean (default: false)` : Starts a `foxglove_bridge` to push data over a websocket at point 8765 (high performance).
+- `rosbridge = boolean (default: false)` : Starts a `rosbridge_server` and `rosapi` node to push data over a websocket at 9090 (more flexible).
 - `composable = boolean (default: false)`: For advanced users only -- it shows how to load the component-based version of the code to get zero-copy IPC between it and other composable nodes. 
 
 # Example visualization with Foxglove

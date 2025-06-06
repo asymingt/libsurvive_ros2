@@ -56,6 +56,8 @@ def generate_launch_description():
                               description='Launch in a composable container'),
         DeclareLaunchArgument('rosbridge', default_value='false',
                               description='Launch a rosbridge'),
+        DeclareLaunchArgument('foxbridge', default_value='false',
+                              description='Launch a foxglove bridge'),
         DeclareLaunchArgument('record', default_value='false',
                               description='Record data with rosbag')]
 
@@ -89,7 +91,7 @@ def generate_launch_description():
         ],
         output='log')
 
-    # For bridging connection to foxglove running on a remote server.
+    # For ros webdocker bridge
     rosbridge_node = Node(
         package='rosbridge_server',
         executable='rosbridge_websocket',
@@ -106,6 +108,17 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('rosbridge')),
         output='log')
 
+    # For foxglove websocket bridge.
+    foxbridge_node = Node(
+        package='foxglove_bridge',
+        executable='foxglove_bridge',
+        name='foxglove_bridge',
+        condition=IfCondition(LaunchConfiguration('foxbridge')),
+        parameters=[
+            {'port': 8765},
+        ],
+        output='log')
+
     # For recording all data from the experiment
     bag_record_node = ExecuteProcess(
         cmd=['ros2', 'bag', 'record', '-o', BAG_FILE] + [
@@ -119,6 +132,7 @@ def generate_launch_description():
         arguments + [
             libsurvive_node,
             libsurvive_composable_node,
+            foxbridge_node,
             rosbridge_node,
             rosapi_node,
             bag_record_node
