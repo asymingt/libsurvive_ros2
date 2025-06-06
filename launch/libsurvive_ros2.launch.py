@@ -108,11 +108,11 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('rosbridge')),
         output='log')
 
-    # For foxglove websocket bridge
+    # For foxglove websocket bridge.
     foxbridge_node = Node(
-        package="foxglove_bridge",
-        executable="foxglove_bridge",
-        name="foxglove_bridge",
+        package='foxglove_bridge',
+        executable='foxglove_bridge',
+        name='foxglove_bridge',
         condition=IfCondition(LaunchConfiguration('foxbridge')),
         parameters=[
             {'port': 8765},
