@@ -40,6 +40,22 @@ sudo udevadm control --reload-rules && udevadm trigger
 
 You can now choose to build the driver natively or in a container. The benefit of launching it within a container is that it won't interfere with any pre-existing ROS installation on your machine. However, you will need docker-ce and the compose plugin for things to work.
 
+## Devcontainer build and test (easiest for development)
+
+You can open this project as a [Visual Studio Code Devcontainer](https://code.visualstudio.com/docs/devcontainers/containers). It will then prompt you for a target ROS distribution in the drop-down menu at the top of the IDE. When you select your desired distribution, the devcontainer engine will build a container for this ROS distribution, install our project dependencies, and compile the code. You can just open up a terminal and run:
+
+```sh
+ros@0d81683baf55:~/ros2_ws$ ros2 launch libsurvive_ros2 libsurvive_ros2.launch.py 
+[INFO] [launch]: All log files can be found below /home/ros/.ros/log/2025-06-06-17-17-41-207302-0d81683baf55-2267
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [libsurvive_ros2_node-1]: process started with pid [2304]
+[libsurvive_ros2_node-1] Info: Loaded drivers: GlobalSceneSolver, HTCVive
+[libsurvive_ros2_node-1] [INFO] [1749230261.309788197] [libsurvive.libsurvive_ros2_node]: Start listening for events..
+[libsurvive_ros2_node-1] [INFO] [1749230261.309834518] [libsurvive.libsurvive_ros2_node]: Cleaning up.
+```
+
+Volume binding of the source tree happens with the correct permission. So, if you edit the source code in the container folder `/home/ros/ros2_ws/src/libsurvive_ros2` your changes will propagate to your host folder, where you can eventually push them upstream. It is also possible to use git within the container, but this is more complicated and not recommended.
+
 ## Containerized build and test (easiest and recommended)
 
 Install docker and docker-compose: https://docs.docker.com/engine/install/ubuntu/

@@ -25,6 +25,13 @@ ARG ARCH=amd64
 
 # Default image, user and root directory
 FROM ${ARCH}/ros:${ROS_DISTRO}-ros-base
+
+# Default user and group information
+ARG USERNAME=ros
+ARG USER_UID=1000
+ARG USER_GID=1000
+
+# Default shell to use in the RUN commands below.
 SHELL ["/bin/bash", "-c"]
 
 # Grab the latest ROS2 key to avoid an outdated key from affecting the build.
@@ -56,16 +63,19 @@ RUN apt-get update                                                              
         zlib1g-dev                                                              \
     && sudo rm -rf /var/lib/apt/lists/*
 
-# Add an 'ros' user with dialout/plugdev access and can use sudo passwordless.
-RUN useradd -ms /bin/bash ros && echo "ros:ros" | chpasswd
-RUN usermod -aG sudo,dialout,plugdev ros
-RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+# Replace any existing 'ubuntu' user with a 'ros' user with specific privileges.
+RUN groupdel ubuntu || true                                                     \
+ && userdel -r ubuntu || true                                                   \
+ && groupadd --gid $USER_GID $USERNAME                                          \
+ && useradd --uid $USER_UID --gid $USER_GID --shell /bin/bash -m $USERNAME      \
+ && usermod -aG sudo,dialout,plugdev $USERNAME                                  \
+ && echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
 # Switch to the non-root user.
 USER ros
 
 # Copy the source code into our test workspace.
-RUN mkdir -p /home/ros/ros2_ws/src/libsurvive_ros2
+RUN mkdir -p /home/ros/.config /home/ros/ros2_ws/src/libsurvive_ros2
 COPY --chown=ros:ros . /home/ros/ros2_ws/src/libsurvive_ros2
 
 # Install baseline tools
