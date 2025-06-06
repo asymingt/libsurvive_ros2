@@ -40,9 +40,9 @@ sudo udevadm control --reload-rules && udevadm trigger
 
 You can now choose to build the driver natively or in a container. The benefit of launching it within a container is that it won't interfere with any pre-existing ROS installation on your machine. However, you will need docker-ce and the compose plugin for things to work.
 
-## Dev container build and test (easiest for development)
+## Devcontainer build and test (easiest for development)
 
-You can open this project as a Visual Studio code devcontainer. It will then prompt you for a target ROS distribution in the drop-down menu at the top of the IDE. When you select your desired distribution, the devcontainer engine will build a container for this ROS distribution, install our project dependencies, and compile the code. You can just open up a terminal and run:
+You can open this project as a [Visual Studio Code Devcontainer](https://code.visualstudio.com/docs/devcontainers/containers). It will then prompt you for a target ROS distribution in the drop-down menu at the top of the IDE. When you select your desired distribution, the devcontainer engine will build a container for this ROS distribution, install our project dependencies, and compile the code. You can just open up a terminal and run:
 
 ```sh
 ros@0d81683baf55:~/ros2_ws$ ros2 launch libsurvive_ros2 libsurvive_ros2.launch.py 
