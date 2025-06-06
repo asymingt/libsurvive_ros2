@@ -62,11 +62,12 @@ workflows:
           resource_class: arm.medium
           arch: arm64v8
           ros_distro: jazzy
-      - checkout_build_test:
-          name: ros2-kilted-arm64
-          resource_class: arm.medium
-          arch: arm64v8
-          ros_distro: kilted
+      # See: https://github.com/orgs/foxglove/discussions/1127
+      # - checkout_build_test:
+      #     name: ros2-kilted-arm64
+      #     resource_class: arm.medium
+      #     arch: arm64v8
+      #     ros_distro: kilted
       - checkout_build_test:
           name: ros2-rolling-arm64
           resource_class: arm.medium
@@ -97,11 +98,12 @@ workflows:
           resource_class: medium
           arch: amd64
           ros_distro: jazzy
-      - checkout_build_test:
-          name: ros2-kilted-amd64
-          resource_class: medium
-          arch: amd64
-          ros_distro: kilted
+      # See: https://github.com/orgs/foxglove/discussions/1127
+      # - checkout_build_test:
+      #     name: ros2-kilted-amd64
+      #     resource_class: medium
+      #     arch: amd64
+      #     ros_distro: kilted
       - checkout_build_test:
           name: ros2-rolling-amd64
           resource_class: medium
