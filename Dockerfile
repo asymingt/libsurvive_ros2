@@ -75,7 +75,7 @@ RUN groupdel ubuntu || true                                                     
 USER ros
 
 # Copy the source code into our test workspace.
-RUN mkdir -p /home/ros/ros2_ws/src/libsurvive_ros2
+RUN mkdir -p /home/ros/.config /home/ros/ros2_ws/src/libsurvive_ros2
 COPY --chown=ros:ros . /home/ros/ros2_ws/src/libsurvive_ros2
 
 # Install baseline tools
