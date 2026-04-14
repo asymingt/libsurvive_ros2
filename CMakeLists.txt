@@ -49,13 +49,19 @@ externalproject_add(libsurvive
 
 # Find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/OcclusionStatus.msg"
+  DEPENDENCIES std_msgs)
 
 # Universally add this components includes
 include_directories(include)
@@ -79,15 +85,12 @@ ament_target_dependencies(libsurvive_ros2_component
   diagnostic_msgs
   geometry_msgs
   sensor_msgs
+  std_msgs
   tf2
   tf2_ros)
+rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
+target_link_libraries(libsurvive_ros2_component ${cpp_typesupport_target})
 rclcpp_components_register_nodes(libsurvive_ros2_component "libsurvive_ros2::Component")
-
-# Export the library path because the package installs libraries without exporting them
-if(NOT WIN32)
-  ament_environment_hooks(
-    "${ament_cmake_package_templates_ENVIRONMENT_HOOK_LIBRARY_PATH}")
-endif()
 
 # Manually compose the component into a node
 add_executable(libsurvive_ros2_node
@@ -133,5 +136,5 @@ endif()
 
 # Export all include directories and declare the package
 ament_export_include_directories(include)
+ament_export_dependencies(rosidl_default_runtime)
 ament_package()
-

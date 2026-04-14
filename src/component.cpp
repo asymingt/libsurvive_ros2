@@ -30,6 +30,10 @@
 
 // Scale factor to move from G to m/s^2.
 constexpr double SI_GRAVITY = 9.80665;
+constexpr double OCCLUSION_ENTER_TIMEOUT_SEC = 0.2;
+constexpr double OCCLUSION_EXIT_TIMEOUT_SEC = 0.08;
+constexpr int OCCLUSION_ENTER_SAMPLES = 3;
+constexpr int OCCLUSION_EXIT_SAMPLES = 5;
 
 // We can only ever load one version of the driver, so we store a pointer to the instance of the
 // driver here, so the IMU callback can push data to it.
@@ -67,6 +71,26 @@ static void ros_from_pose(
   tx->rotation.z = pose.Rot[3];
 }
 
+static bool compute_raw_occluded(
+  SurviveObject * so, bool previous_state)
+{
+  if (so == nullptr || so->activations.last_light <= 0) {
+    return true;
+  }
+
+  const double now_sec = survive_run_time_since_epoch(so->ctx);
+  const double last_light_sec = static_cast<double>(
+    SurviveSensorActivations_runtime(&so->activations, so->activations.last_light)) / 1e6;
+  const double dt_since_last_light_sec = now_sec - last_light_sec;
+
+  if (dt_since_last_light_sec <= 0.0) {
+    return false;
+  }
+
+  const double timeout = previous_state ? OCCLUSION_EXIT_TIMEOUT_SEC : OCCLUSION_ENTER_TIMEOUT_SEC;
+  return dt_since_last_light_sec > timeout;
+}
+
 namespace libsurvive_ros2
 {
 
@@ -102,6 +126,11 @@ Component::Component(const rclcpp::NodeOptions & options)
   this->declare_parameter("cfg_topic", "cfg");
   this->get_parameter("cfg_topic", cfg_topic);
   cfg_publisher_ = this->create_publisher<diagnostic_msgs::msg::KeyValue>(cfg_topic, 10);
+
+  this->declare_parameter("occlusion_topic", "occlusion");
+  this->get_parameter("occlusion_topic", occlusion_topic_base_);
+  occlusion_publisher_ =
+    this->create_publisher<libsurvive_ros2::msg::OcclusionStatus>(occlusion_topic_base_, 10);
 
   // Setup driver parameters.
   std::string driver_args;
@@ -158,6 +187,62 @@ void Component::publish_imu(const sensor_msgs::msg::Imu & msg)
   }
 }
 
+void Component::update_occlusion_state(const SurviveSimpleObject * object, FLT pose_timecode)
+{
+  if (object == nullptr) {
+    return;
+  }
+
+  SurviveObject * so = survive_simple_get_survive_object(object);
+  if (so == nullptr) {
+    return;
+  }
+
+  const auto serial = std::string(survive_simple_serial_number(object));
+  if (serial.empty()) {
+    return;
+  }
+
+  const bool previous_state = occlusion_by_device_[serial];
+  const bool raw_occluded = compute_raw_occluded(so, previous_state);
+
+  bool next_state = previous_state;
+  int & enter_count = occlusion_enter_count_by_device_[serial];
+  int & exit_count = occlusion_exit_count_by_device_[serial];
+
+  if (raw_occluded == previous_state) {
+    enter_count = 0;
+    exit_count = 0;
+  } else if (raw_occluded) {
+    exit_count = 0;
+    if (++enter_count >= OCCLUSION_ENTER_SAMPLES) {
+      next_state = true;
+      enter_count = 0;
+    }
+  } else {
+    enter_count = 0;
+    if (++exit_count >= OCCLUSION_EXIT_SAMPLES) {
+      next_state = false;
+      exit_count = 0;
+    }
+  }
+
+  occlusion_by_device_[serial] = next_state;
+  if (next_state != previous_state) {
+    publish_device_occlusion(serial, next_state, pose_timecode);
+  }
+}
+
+void Component::publish_device_occlusion(const std::string & serial, bool occluded, FLT timecode)
+{
+  libsurvive_ros2::msg::OcclusionStatus msg;
+  msg.header.stamp =
+    (timecode > 0.0F) ? get_ros_time("occlusion", timecode) : this->get_clock()->now();
+  msg.header.frame_id = serial;
+  msg.occluded = occluded;
+  occlusion_publisher_->publish(msg);
+}
+
 void Component::work()
 {
   RCLCPP_INFO(this->get_logger(), "Start listening for events..");
@@ -186,6 +271,8 @@ void Component::work()
               pose_msg.child_frame_id = survive_simple_serial_number(pose_event->object);
               ros_from_pose(&pose_msg.transform, pose);
               tf_broadcaster_->sendTransform(pose_msg);
+
+              update_occlusion_state(pose_event->object, timecode);
             }
           }
           break;

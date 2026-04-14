@@ -14,11 +14,16 @@
 
   <depend>rclcpp</depend>
   <depend>rclcpp_components</depend>
+  <build_depend>rosidl_default_generators</build_depend>
+  <exec_depend>rosidl_default_runtime</exec_depend>
   <depend>diagnostic_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
   <depend>tf2</depend>
   <depend>tf2_ros</depend>
+
+  <member_of_group>rosidl_interface_packages</member_of_group>
   
   <exec_depend>rosbridge_suite</exec_depend>
   <exec_depend>foxglove_bridge</exec_depend>
