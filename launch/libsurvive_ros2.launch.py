@@ -45,6 +45,7 @@ PARAMETERS = [
     {'imu_topic': 'imu'},
     {'joy_topic': 'joy'},
     {'cfg_topic': 'cfg'},
+    {'occlusion_topic': LaunchConfiguration('occlusion_topic')},
     {'lighthouse_rate': 4.0}]
 
 
@@ -58,6 +59,8 @@ def generate_launch_description():
                               description='Launch a rosbridge'),
         DeclareLaunchArgument('foxbridge', default_value='false',
                               description='Launch a foxglove bridge'),
+        DeclareLaunchArgument('occlusion_topic', default_value='occlusion',
+                              description='Topic name for per-device occlusion status messages'),
         DeclareLaunchArgument('record', default_value='false',
                               description='Record data with rosbag')]
 
