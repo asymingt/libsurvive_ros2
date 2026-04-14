@@ -19,6 +19,7 @@
 // THE SOFTWARE.
 
 // C++ system
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -91,6 +92,11 @@ Component::Component(const rclcpp::NodeOptions & options)
   this->get_parameter("imu_topic", imu_topic);
   imu_publisher_ = this->create_publisher<sensor_msgs::msg::Imu>(imu_topic, 10);
 
+  std::string battery_topic;
+  this->declare_parameter("battery_topic", "battery");
+  this->get_parameter("battery_topic", battery_topic);
+  battery_publisher_ = this->create_publisher<sensor_msgs::msg::BatteryState>(battery_topic, 10);
+
   // Setup topic for joystick.
   std::string joy_topic;
   this->declare_parameter("joy_topic", "joy");
@@ -158,6 +164,13 @@ void Component::publish_imu(const sensor_msgs::msg::Imu & msg)
   }
 }
 
+void Component::publish_battery(const sensor_msgs::msg::BatteryState & msg)
+{
+  if (battery_publisher_) {
+    battery_publisher_->publish(msg);
+  }
+}
+
 void Component::work()
 {
   RCLCPP_INFO(this->get_logger(), "Start listening for events..");
@@ -180,12 +193,32 @@ void Component::work()
             SurvivePose pose = {};
             auto timecode = survive_simple_object_get_latest_pose(pose_event->object, &pose);
             if (timecode > 0) {
+              const std::string serial = survive_simple_serial_number(pose_event->object);
               geometry_msgs::msg::TransformStamped pose_msg;
               pose_msg.header.stamp = this->get_ros_time("tracker", timecode);
               pose_msg.header.frame_id = tracking_frame_;
-              pose_msg.child_frame_id = survive_simple_serial_number(pose_event->object);
+              pose_msg.child_frame_id = serial;
               ros_from_pose(&pose_msg.transform, pose);
               tf_broadcaster_->sendTransform(pose_msg);
+
+              SurviveObject * so = survive_simple_get_survive_object(pose_event->object);
+              if (so != nullptr) {
+                sensor_msgs::msg::BatteryState battery_msg;
+                battery_msg.header.stamp = pose_msg.header.stamp;
+                battery_msg.header.frame_id = serial;
+                battery_msg.present = so->ison;
+
+                if (so->charge >= 0 && so->charge <= 100) {
+                  battery_msg.percentage = static_cast<float>(so->charge) / 100.0F;
+                } else {
+                  battery_msg.percentage = std::numeric_limits<float>::quiet_NaN();
+                }
+
+                battery_msg.power_supply_status = so->charging ?
+                  sensor_msgs::msg::BatteryState::POWER_SUPPLY_STATUS_CHARGING :
+                  sensor_msgs::msg::BatteryState::POWER_SUPPLY_STATUS_DISCHARGING;
+                publish_battery(battery_msg);
+              }
             }
           }
           break;
