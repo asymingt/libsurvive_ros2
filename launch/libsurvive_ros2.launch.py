@@ -43,6 +43,7 @@ PARAMETERS = [
     {'driver_args': f'--force-recalibrate 1 -c {CFG_FILE}'},
     {'tracking_frame': 'libsurvive_world'},
     {'imu_topic': 'imu'},
+    {'velocity_topic': LaunchConfiguration('velocity_topic')},
     {'joy_topic': 'joy'},
     {'cfg_topic': 'cfg'},
     {'lighthouse_rate': 4.0}]
@@ -58,6 +59,8 @@ def generate_launch_description():
                               description='Launch a rosbridge'),
         DeclareLaunchArgument('foxbridge', default_value='false',
                               description='Launch a foxglove bridge'),
+        DeclareLaunchArgument('velocity_topic', default_value='velocity',
+                              description='Topic name for per-device velocity stream'),
         DeclareLaunchArgument('record', default_value='false',
                               description='Record data with rosbag')]
 

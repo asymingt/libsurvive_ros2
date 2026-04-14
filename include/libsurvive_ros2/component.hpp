@@ -38,6 +38,7 @@
 #include "diagnostic_msgs/msg/key_value.hpp"
 #include "geometry_msgs/msg/point_stamped.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
+#include "geometry_msgs/msg/twist_stamped.hpp"
 #include "libsurvive/survive_api.h"
 #include "libsurvive/survive.h"
 #include "rclcpp/rclcpp.hpp"
@@ -56,6 +57,7 @@ public:
   virtual ~Component();
   rclcpp::Time get_ros_time(const std::string & str, FLT timecode);
   void publish_imu(const sensor_msgs::msg::Imu & msg);
+  void publish_velocity(const geometry_msgs::msg::TwistStamped & msg);
 
 private:
   void work();
@@ -64,6 +66,7 @@ private:
   std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
   rclcpp::Publisher<sensor_msgs::msg::Joy>::SharedPtr joy_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_publisher_;
+  rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr velocity_publisher_;
   rclcpp::Publisher<diagnostic_msgs::msg::KeyValue>::SharedPtr cfg_publisher_;
   std::thread worker_thread_;
   rclcpp::Time last_base_station_update_;
