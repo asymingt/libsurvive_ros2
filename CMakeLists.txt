@@ -96,6 +96,15 @@ target_link_libraries(libsurvive_ros2_node
   libsurvive_ros2_component)
 ament_target_dependencies(libsurvive_ros2_node rclcpp)
 
+add_executable(libsurvive_world_align_node
+  src/world_align_node.cpp)
+ament_target_dependencies(libsurvive_world_align_node
+  rclcpp
+  geometry_msgs
+  sensor_msgs
+  tf2
+  tf2_ros)
+
 # Install libsurvive
 install(
   DIRECTORY
@@ -118,6 +127,11 @@ install(
     libsurvive_ros2_node
   DESTINATION lib/${PROJECT_NAME})
 
+install(
+  TARGETS
+    libsurvive_world_align_node
+  DESTINATION lib/${PROJECT_NAME})
+
 # Install the shared things
 install(
   DIRECTORY
@@ -134,4 +148,3 @@ endif()
 # Export all include directories and declare the package
 ament_export_include_directories(include)
 ament_package()
-
