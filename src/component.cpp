@@ -23,8 +23,8 @@
 #include <string>
 #include <vector>
 
-#include <tf2/LinearMath/Quaternion.h>
-#include <tf2/LinearMath/Vector3.h>
+#include <tf2/LinearMath/Quaternion.hpp>
+#include <tf2/LinearMath/Vector3.hpp>
 
 // Other
 #include "libsurvive_ros2/component.hpp"

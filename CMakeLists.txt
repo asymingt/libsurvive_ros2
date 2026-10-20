@@ -70,17 +70,17 @@ target_include_directories(libsurvive_ros2_component PUBLIC
   ${CMAKE_CURRENT_BINARY_DIR}/libsurvive-install/include/libsurvive/redist)
 target_link_directories(libsurvive_ros2_component PUBLIC
   ${CMAKE_CURRENT_BINARY_DIR}/libsurvive-install/lib)
-target_link_libraries(libsurvive_ros2_component -lsurvive)
+target_link_libraries(libsurvive_ros2_component
+  -lsurvive
+  rclcpp::rclcpp
+  rclcpp_components::component
+  ${diagnostic_msgs_TARGETS}
+  ${geometry_msgs_TARGETS}
+  ${sensor_msgs_TARGETS}
+  tf2::tf2
+  tf2_ros::tf2_ros)
 target_compile_definitions(libsurvive_ros2_component
   PRIVATE "COMPOSITION_BUILDING_DLL")
-ament_target_dependencies(libsurvive_ros2_component
-  rclcpp
-  rclcpp_components
-  diagnostic_msgs
-  geometry_msgs
-  sensor_msgs
-  tf2
-  tf2_ros)
 rclcpp_components_register_nodes(libsurvive_ros2_component "libsurvive_ros2::Component")
 
 # Export the library path because the package installs libraries without exporting them
@@ -93,8 +93,8 @@ endif()
 add_executable(libsurvive_ros2_node
   src/node.cpp)
 target_link_libraries(libsurvive_ros2_node
-  libsurvive_ros2_component)
-ament_target_dependencies(libsurvive_ros2_node rclcpp)
+  libsurvive_ros2_component
+  rclcpp::rclcpp)
 
 # Install libsurvive
 install(
